@@ -1,0 +1,36 @@
+{
+  "name": "sfcc-pipeline-visualiser",
+  "displayName": "SFCC Pipeline Visualiser",
+  "description": "Visualise Salesforce Commerce Cloud (Demandware) pipelines as interactive graphs in VS Code.",
+  "version": "0.0.1",
+  "publisher": "your-name",
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sfccPipelineVisualizer.open",
+        "title": "Open SFCC Pipeline Visualiser",
+        "category": "SFCC Pipeline"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "@types/vscode": "^1.84.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.10",
+    "tslib": "^2.6.2"
+  }
+}
