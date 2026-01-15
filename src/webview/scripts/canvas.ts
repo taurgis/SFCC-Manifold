@@ -996,7 +996,34 @@ export function getCanvasScript(): string {
         console.log("DETERMINE_SIDES:", fromNode.id, "→", toNode.id);
         console.log("  sourceConn:", sourceConn, "targetConn:", targetConn);
         console.log("  dx:", dx, "dy:", dy);
-        console.log("  fromNode pos:", fromNode.x, fromNode.y, "toNode pos:", toNode.x, toNode.y);
+        console.log("  fromNode type:", fromNode.type, "pos:", fromNode.x, fromNode.y, "toNode type:", toNode.type, "pos:", toNode.x, toNode.y);
+        
+        // Special case: Join-to-Join connections - use simple direct routing
+        if (fromNode.type === "join" && toNode.type === "join") {
+          console.log("  JOIN-TO-JOIN connection detected");
+          // For join-to-join, use the most direct route based on position
+          if (Math.abs(dx) > Math.abs(dy)) {
+            // Primarily horizontal
+            if (dx > 0) {
+              outSide = "right";
+              inSide = "left";
+            } else {
+              outSide = "left";
+              inSide = "right";
+            }
+          } else {
+            // Primarily vertical
+            if (dy > 0) {
+              outSide = "bottom";
+              inSide = "top";
+            } else {
+              outSide = "top";
+              inSide = "bottom";
+            }
+          }
+          console.log("  JOIN-TO-JOIN result: outSide:", outSide, "inSide:", inSide);
+          return { outSide: outSide, inSide: inSide, edgeId: edgeId };
+        }
         
         // Target connector determines entry side - RESPECT XML if specified
         if (targetConn === "in" || targetConn === "in1" || targetConn === "in2") {
@@ -1342,12 +1369,15 @@ export function getCanvasScript(): string {
         var isPrimarilyHorizontal = (plan.outSide === "right" && plan.inSide === "left") || 
                                     (plan.outSide === "left" && plan.inSide === "right");
         
-        console.log("EDGE ROUTING:", fromNode.id, "→", toNode.id, "start:", start.x, start.y, "end:", end.x, end.y, "isBackEdge:", isBackEdge, "isGoingUp:", isGoingUp, "isPrimarilyHorizontal:", isPrimarilyHorizontal, "hasBendPoints:", hasBendPoints);
+        // Join-to-Join connections should use direct routing, not loop curves
+        var isJoinToJoin = fromNode.type === "join" && toNode.type === "join";
+        
+        console.log("EDGE ROUTING:", fromNode.id, "→", toNode.id, "start:", start.x, start.y, "end:", end.x, end.y, "isBackEdge:", isBackEdge, "isGoingUp:", isGoingUp, "isPrimarilyHorizontal:", isPrimarilyHorizontal, "isJoinToJoin:", isJoinToJoin, "hasBendPoints:", hasBendPoints);
 
         var points;
         var arrowAngle;
 
-        if (isBackEdge || (isGoingUp && !hasBendPoints && !isPrimarilyHorizontal)) {
+        if (isBackEdge || (isGoingUp && !hasBendPoints && !isPrimarilyHorizontal && !isJoinToJoin)) {
           // Use bottom->top anchors for loops to look like the legacy editor
           var x1 = fromNode.x + nodeWidth / 2;
           var y1 = fromNode.y + nodeHeight;
