@@ -1006,9 +1006,25 @@ export function getCanvasScript(): string {
           if (absDyLocal < nodeHeight * 0.5 && absDxLocal > nodeWidth * 0.5) {
             // Horizontally adjacent - enter from the side facing the source
             inSide = dx > 0 ? "left" : "right";
-            console.log("  IN connector with horizontal adjacency - using side entry:", inSide);
+            // Also set outSide to match the direction
+            outSide = dx > 0 ? "right" : "left";
+            console.log("  IN connector with horizontal adjacency - outSide:", outSide, "inSide:", inSide);
+          } else if (toNode.type === "join" && dx > nodeWidth * 0.3) {
+            // Join node is to the right (even if not strictly horizontal) - route right to left
+            outSide = "right";
+            inSide = "left";
+            console.log("  IN to Join on right - exit right, enter left");
           } else {
             inSide = "top";
+            
+            // For in1 connections to Join nodes that are to the right, exit from right side
+            // This prevents overlap with the main downward flow (which exits from bottom)
+            if ((targetConn === "in1" || targetConn === "in") && toNode.type === "join" && dx > nodeWidth * 0.3) {
+              // Target Join is to the right - exit from right side, enter from top
+              outSide = "right";
+              // inSide stays "top" - we go right then down to top of Join
+              console.log("  IN1 to Join on right - exit right, enter top");
+            }
           }
         } else if (inConnNum >= 3) {
           // in3, in4, etc. - determine best entry side based on where connection comes from
@@ -1103,7 +1119,10 @@ export function getCanvasScript(): string {
         } else if (!sourceConn) {
           // No source connector specified
           // If target has a specific inSide, choose outSide that routes cleanly to it
-          if (inSide === "top") {
+          // BUT only if outSide wasn't already set by target connector logic
+          if (outSide) {
+            console.log("  outSide already set to:", outSide, "- keeping it");
+          } else if (inSide === "top") {
             // Target enters from top - prefer exiting bottom for clean vertical flow
             outSide = "bottom";
           } else if (inSide === "right") {
