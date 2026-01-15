@@ -16,13 +16,15 @@ export interface WebviewContentOptions {
   pipeline: ParsedPipeline;
   sourceUri: vscode.Uri;
   extensionUri: vscode.Uri;
+  /** Optional: Navigate to this start node after loading */
+  navigateToStartNode?: string;
 }
 
 /**
  * Generate the complete webview HTML content
  */
 export function getWebviewContent(options: WebviewContentOptions): string {
-  const { webview, pipeline, sourceUri, extensionUri } = options;
+  const { webview, pipeline, sourceUri, extensionUri, navigateToStartNode } = options;
   const nonce = createNonce();
   const sourcePath = sourceUri.fsPath;
 
@@ -42,7 +44,7 @@ export function getWebviewContent(options: WebviewContentOptions): string {
         ${renderSidebar({ pipeline, sourcePath })}
         ${renderCanvas()}
       </div>
-      ${renderScripts(nonce, pipeline, sourcePath, konvaUri)}
+      ${renderScripts(nonce, pipeline, sourcePath, konvaUri, navigateToStartNode)}
     </body>
   </html>`;
 }
@@ -65,16 +67,19 @@ function renderScripts(
   nonce: string,
   pipeline: ParsedPipeline,
   sourcePath: string,
-  konvaUri: vscode.Uri
+  konvaUri: vscode.Uri,
+  navigateToStartNode?: string
 ): string {
   const encodedData = encodeForScript(pipeline);
   const encodedPath = encodeForScript(sourcePath);
+  const encodedStartNode = navigateToStartNode ? encodeForScript(navigateToStartNode) : "null";
 
   return `
     <script src="${konvaUri}" nonce="${nonce}"></script>
     <script nonce="${nonce}">
       const pipelineData = ${encodedData};
       const sourceLabel = ${encodedPath};
+      const initialStartNode = ${encodedStartNode};
     </script>
     <script nonce="${nonce}">${getMainScript()}</script>
   `;

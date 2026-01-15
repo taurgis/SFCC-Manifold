@@ -325,6 +325,46 @@ export function getCanvasScript(): string {
         wrap: "none"
       }));
 
+      // Add navigation indicator for jump/call nodes
+      if (node.type === "jump" || node.type === "call") {
+        // External link icon in bottom right corner
+        var iconGroup = new Konva.Group({
+          x: nodeWidth - 28,
+          y: nodeHeight - 28
+        });
+        
+        iconGroup.add(new Konva.Rect({
+          width: 20,
+          height: 20,
+          fill: "rgba(242, 192, 120, 0.2)",
+          cornerRadius: 4
+        }));
+        
+        // Draw external link icon
+        iconGroup.add(new Konva.Line({
+          points: [5, 15, 15, 5],
+          stroke: "#f2c078",
+          strokeWidth: 1.5,
+          lineCap: "round"
+        }));
+        iconGroup.add(new Konva.Line({
+          points: [9, 5, 15, 5, 15, 11],
+          stroke: "#f2c078",
+          strokeWidth: 1.5,
+          lineCap: "round",
+          lineJoin: "round"
+        }));
+        iconGroup.add(new Konva.Line({
+          points: [5, 9, 5, 15, 11, 15],
+          stroke: "#f2c078",
+          strokeWidth: 1.5,
+          lineCap: "round",
+          lineJoin: "round"
+        }));
+        
+        group.add(iconGroup);
+      }
+
       // Hover effects
       group.on("mouseenter", function() {
         document.body.style.cursor = "pointer";
@@ -349,6 +389,14 @@ export function getCanvasScript(): string {
         e.cancelBubble = true;
         selectNode(node, layer);
       });
+
+      // Double-click to navigate (for jump and call nodes)
+      if (node.type === "jump" || node.type === "call") {
+        group.on("dblclick dbltap", function(e) {
+          e.cancelBubble = true;
+          handleNodeDoubleClick(node);
+        });
+      }
 
       layer.add(group);
     }

@@ -50,8 +50,10 @@ function renderZoomControls(): string {
 function renderHint(): string {
   return `
     <div class="canvas-hint">
-      <span class="hint-key">Scroll</span> to zoom
-      <span class="hint-key">Drag</span> to pan
+      <span class="hint-key">Scroll</span> zoom
+      <span class="hint-key">Drag</span> pan
+      <span class="hint-key">Click</span> select
+      <span class="hint-key">Double-click</span> navigate
     </div>
   `;
 }

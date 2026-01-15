@@ -138,6 +138,19 @@ async function openPipelineVisualiser(context: vscode.ExtensionContext, resource
     extensionUri: context.extensionUri,
   });
 
+  // Handle messages from the webview
+  panel.webview.onDidReceiveMessage(
+    async (message) => {
+      switch (message.type) {
+        case "navigateToPipeline":
+          await handleNavigateToPipeline(context, message.pipeline, message.startNode);
+          break;
+      }
+    },
+    undefined,
+    context.subscriptions
+  );
+
   // Track the panel
   openPanels.set(targetUri.fsPath, panel);
 
@@ -172,6 +185,140 @@ async function refreshPanelContent(panel: vscode.WebviewPanel, uri: vscode.Uri):
     sourceUri: uri,
     extensionUri,
   });
+}
+
+/**
+ * Handle navigation to a different pipeline file
+ */
+async function handleNavigateToPipeline(
+  context: vscode.ExtensionContext,
+  pipelineName: string,
+  startNode: string
+): Promise<void> {
+  // Search for the pipeline file in the workspace
+  const pipelineUri = await findPipelineFile(pipelineName);
+  
+  if (!pipelineUri) {
+    vscode.window.showWarningMessage(`Pipeline "${pipelineName}" not found in workspace.`);
+    return;
+  }
+
+  // Check if panel already exists for this file
+  const existingPanel = openPanels.get(pipelineUri.fsPath);
+  if (existingPanel) {
+    existingPanel.reveal(vscode.ViewColumn.Beside);
+    // Send message to navigate to the start node
+    existingPanel.webview.postMessage({
+      type: "navigateToStartNode",
+      startNode: startNode,
+    });
+    return;
+  }
+
+  // Open the pipeline file
+  let xml: string;
+  try {
+    const raw = await vscode.workspace.fs.readFile(pipelineUri);
+    xml = new TextDecoder().decode(raw);
+  } catch (error) {
+    vscode.window.showErrorMessage(`Unable to read ${pipelineUri.fsPath}: ${(error as Error).message}`);
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = parsePipeline(xml, basename(pipelineUri.fsPath));
+  } catch (error) {
+    vscode.window.showErrorMessage(`Failed to parse pipeline: ${(error as Error).message}`);
+    return;
+  }
+
+  const panel = vscode.window.createWebviewPanel(
+    "sfccPipelineVisualizer",
+    `Pipeline: ${parsed.name}`,
+    vscode.ViewColumn.Beside,
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "node_modules")],
+    }
+  );
+
+  panel.webview.html = getWebviewContent({
+    webview: panel.webview,
+    pipeline: parsed,
+    sourceUri: pipelineUri,
+    extensionUri: context.extensionUri,
+    navigateToStartNode: startNode,
+  });
+
+  // Handle messages from the webview
+  panel.webview.onDidReceiveMessage(
+    async (message) => {
+      switch (message.type) {
+        case "navigateToPipeline":
+          await handleNavigateToPipeline(context, message.pipeline, message.startNode);
+          break;
+      }
+    },
+    undefined,
+    context.subscriptions
+  );
+
+  // Track the panel
+  openPanels.set(pipelineUri.fsPath, panel);
+
+  // Clean up when panel is closed
+  panel.onDidDispose(() => {
+    openPanels.delete(pipelineUri.fsPath);
+  });
+}
+
+/**
+ * Search for a pipeline file by name in the workspace
+ */
+async function findPipelineFile(pipelineName: string): Promise<vscode.Uri | undefined> {
+  // Search for XML files with the pipeline name
+  const patterns = [
+    `**/${pipelineName}.xml`,
+    `**/pipelines/${pipelineName}.xml`,
+    `**/pipeline_examples/${pipelineName}.xml`,
+  ];
+
+  for (const pattern of patterns) {
+    const files = await vscode.workspace.findFiles(pattern, "**/node_modules/**", 1);
+    if (files.length > 0) {
+      // Verify it's actually a pipeline file
+      try {
+        const raw = await vscode.workspace.fs.readFile(files[0]);
+        const content = new TextDecoder().decode(raw);
+        if (content.includes("<pipeline") || content.includes("<Pipeline")) {
+          return files[0];
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  // Broader search - find all XML files and check their names
+  const allXmlFiles = await vscode.workspace.findFiles("**/*.xml", "**/node_modules/**", 100);
+  for (const file of allXmlFiles) {
+    const fileName = basename(file.fsPath).toLowerCase();
+    if (fileName.toLowerCase() === pipelineName.toLowerCase()) {
+      try {
+        const raw = await vscode.workspace.fs.readFile(file);
+        const content = new TextDecoder().decode(raw);
+        if (content.includes("<pipeline") || content.includes("<Pipeline")) {
+          return file;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function guessActivePipeline(): vscode.Uri | undefined {
