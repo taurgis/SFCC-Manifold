@@ -21,8 +21,49 @@
         "command": "sfccPipelineVisualizer.open",
         "title": "Open SFCC Pipeline Visualiser",
         "category": "SFCC Pipeline"
+      },
+      {
+        "command": "sfccPipelineVisualizer.openSource",
+        "title": "Open Pipeline Source XML",
+        "category": "SFCC Pipeline",
+        "icon": "$(code)"
+      },
+      {
+        "command": "sfccPipelineVisualizer.openVisualizer",
+        "title": "Open Pipeline Visualizer",
+        "category": "SFCC Pipeline",
+        "icon": "$(type-hierarchy)"
       }
-    ]
+    ],
+    "customEditors": [
+      {
+        "viewType": "sfccPipelineVisualizer.pipelineEditor",
+        "displayName": "SFCC Pipeline Visualizer",
+        "selector": [
+          {
+            "filenamePattern": "**/pipelines/*.xml"
+          },
+          {
+            "filenamePattern": "**/pipeline_examples/*.xml"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "sfccPipelineVisualizer.openSource",
+          "when": "activeCustomEditorId == sfccPipelineVisualizer.pipelineEditor",
+          "group": "navigation"
+        },
+        {
+          "command": "sfccPipelineVisualizer.openVisualizer",
+          "when": "resourceLangId == xml && resourceFilename =~ /\\.xml$/",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",

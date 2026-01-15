@@ -2,189 +2,192 @@ import * as vscode from "vscode";
 import { parsePipeline } from "./lib/pipelineParser";
 import { getWebviewContent } from "./webview/getWebviewContent";
 
-/** Track open panels by file path to avoid duplicates */
-const openPanels = new Map<string, vscode.WebviewPanel>();
+/** Track open webview panels by document URI */
+const documentWebviews = new Map<string, vscode.WebviewPanel>();
 
-/** Store extension URI for use in refresh */
-let extensionUri: vscode.Uri;
+/** Store extension context for use across functions */
+let extensionContext: vscode.ExtensionContext;
 
-export function activate(context: vscode.ExtensionContext) {
-  extensionUri = context.extensionUri;
-  const disposable = vscode.commands.registerCommand("sfccPipelineVisualizer.open", async (uri?: vscode.Uri) => {
-    await openPipelineVisualiser(context, uri);
-  });
+/**
+ * Custom editor provider for SFCC Pipeline files
+ */
+class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
+  public static readonly viewType = "sfccPipelineVisualizer.pipelineEditor";
 
-  // Auto-open visualiser when a pipeline XML file is opened
-  const onDocumentOpen = vscode.workspace.onDidOpenTextDocument(async (document) => {
-    if (isPipelineFile(document)) {
-      await openPipelineVisualiser(context, document.uri);
-    }
-  });
+  constructor(private readonly context: vscode.ExtensionContext) {}
 
-  // Update visualiser when the pipeline file is saved
-  const onDocumentSave = vscode.workspace.onDidSaveTextDocument(async (document) => {
-    if (isPipelineFile(document)) {
-      const panel = openPanels.get(document.uri.fsPath);
-      if (panel) {
-        await refreshPanelContent(panel, document.uri);
+  public async resolveCustomTextEditor(
+    document: vscode.TextDocument,
+    webviewPanel: vscode.WebviewPanel,
+    _token: vscode.CancellationToken
+  ): Promise<void> {
+    // Setup webview options
+    webviewPanel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "node_modules")],
+    };
+
+    // Initial render
+    await this.updateWebview(document, webviewPanel);
+
+    // Track the webview
+    documentWebviews.set(document.uri.toString(), webviewPanel);
+
+    // Listen for document changes
+    const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
+      if (e.document.uri.toString() === document.uri.toString()) {
+        this.updateWebview(document, webviewPanel);
       }
-    }
-  });
+    });
 
-  // Check if any already-open editors contain pipeline files
-  for (const editor of vscode.window.visibleTextEditors) {
-    if (isPipelineFile(editor.document)) {
-      openPipelineVisualiser(context, editor.document.uri);
-      break; // Only open one on activation
+    // Handle messages from the webview
+    webviewPanel.webview.onDidReceiveMessage(
+      async (message) => {
+        switch (message.type) {
+          case "navigateToPipeline":
+            await handleNavigateToPipeline(this.context, message.pipeline, message.startNode);
+            break;
+        }
+      },
+      undefined,
+      this.context.subscriptions
+    );
+
+    // Clean up when the editor is closed
+    webviewPanel.onDidDispose(() => {
+      changeDocumentSubscription.dispose();
+      documentWebviews.delete(document.uri.toString());
+    });
+  }
+
+  private async updateWebview(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel): Promise<void> {
+    const xml = document.getText();
+    
+    try {
+      const parsed = parsePipeline(xml, basename(document.uri.fsPath));
+      
+      webviewPanel.webview.html = getWebviewContent({
+        webview: webviewPanel.webview,
+        pipeline: parsed,
+        sourceUri: document.uri,
+        extensionUri: this.context.extensionUri,
+      });
+    } catch (error) {
+      // Show error state in webview
+      webviewPanel.webview.html = this.getErrorHtml((error as Error).message);
     }
   }
 
-  context.subscriptions.push(disposable, onDocumentOpen, onDocumentSave);
+  private getErrorHtml(message: string): string {
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: #0b1021;
+      color: #ff8a7a;
+      font-family: system-ui, sans-serif;
+    }
+    .error {
+      text-align: center;
+      padding: 2rem;
+    }
+    .error h2 { margin-bottom: 1rem; }
+    .error pre {
+      background: rgba(255,255,255,0.1);
+      padding: 1rem;
+      border-radius: 4px;
+      max-width: 600px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="error">
+    <h2>Failed to parse pipeline</h2>
+    <pre>${escapeHtml(message)}</pre>
+    <p>Use the "Open Source" button to view the raw XML.</p>
+  </div>
+</body>
+</html>`;
+  }
+}
+
+export function activate(context: vscode.ExtensionContext) {
+  extensionContext = context;
+
+  // Register the custom editor provider
+  const provider = new PipelineEditorProvider(context);
+  context.subscriptions.push(
+    vscode.window.registerCustomEditorProvider(
+      PipelineEditorProvider.viewType,
+      provider,
+      {
+        webviewOptions: {
+          retainContextWhenHidden: true,
+        },
+        supportsMultipleEditorsPerDocument: false,
+      }
+    )
+  );
+
+  // Command to open the visualizer (from command palette or for non-default paths)
+  const openVisualizerCommand = vscode.commands.registerCommand(
+    "sfccPipelineVisualizer.open",
+    async (uri?: vscode.Uri) => {
+      const targetUri = uri || guessActivePipeline() || (await promptForPipelineFile());
+      if (!targetUri) {
+        vscode.window.showWarningMessage("Select a pipeline XML file to visualise.");
+        return;
+      }
+
+      // Open with our custom editor
+      await vscode.commands.executeCommand(
+        "vscode.openWith",
+        targetUri,
+        PipelineEditorProvider.viewType
+      );
+    }
+  );
+
+  // Command to open the source XML
+  const openSourceCommand = vscode.commands.registerCommand(
+    "sfccPipelineVisualizer.openSource",
+    async () => {
+      const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+      if (activeTab?.input && typeof activeTab.input === "object" && "uri" in activeTab.input) {
+        const uri = (activeTab.input as { uri: vscode.Uri }).uri;
+        // Open with default text editor
+        await vscode.commands.executeCommand("vscode.openWith", uri, "default");
+      }
+    }
+  );
+
+  // Command to open the visualizer from text editor
+  const openVisualizerFromTextCommand = vscode.commands.registerCommand(
+    "sfccPipelineVisualizer.openVisualizer",
+    async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (editor) {
+        await vscode.commands.executeCommand(
+          "vscode.openWith",
+          editor.document.uri,
+          PipelineEditorProvider.viewType
+        );
+      }
+    }
+  );
+
+  context.subscriptions.push(openVisualizerCommand, openSourceCommand, openVisualizerFromTextCommand);
 }
 
 export function deactivate() {
-  // Dispose all tracked panels
-  for (const panel of openPanels.values()) {
-    panel.dispose();
-  }
-  openPanels.clear();
-}
-
-/**
- * Detect if a document is a pipeline XML file.
- * Checks file path patterns and XML content for pipeline markers.
- */
-function isPipelineFile(document: vscode.TextDocument): boolean {
-  // Must be XML
-  if (document.languageId !== "xml" && !document.uri.fsPath.toLowerCase().endsWith(".xml")) {
-    return false;
-  }
-
-  // Check path patterns commonly used for pipelines
-  const fsPath = document.uri.fsPath.toLowerCase();
-  if (fsPath.includes("/pipelines/") || fsPath.includes("\\pipelines\\") || fsPath.includes("pipeline_examples")) {
-    return true;
-  }
-
-  // Check XML content for pipeline root element (first 500 chars)
-  const fullText = document.getText();
-  const text = fullText.substring(0, Math.min(fullText.length, 500));
-  return text.includes("<pipeline") || text.includes("<Pipeline");
-}
-
-async function openPipelineVisualiser(context: vscode.ExtensionContext, resource?: vscode.Uri) {
-  if (!vscode.workspace.isTrusted) {
-    const choice = await vscode.window.showWarningMessage(
-      "Workspace is untrusted. The visualiser will read the selected XML file only.",
-      "Proceed",
-      "Cancel"
-    );
-    if (choice !== "Proceed") {
-      return;
-    }
-  }
-
-  const targetUri = resource || guessActivePipeline() || (await promptForPipelineFile());
-  if (!targetUri) {
-    vscode.window.showWarningMessage("Select a pipeline XML file to visualise.");
-    return;
-  }
-
-  // If panel already exists for this file, reveal it instead of creating a new one
-  const existingPanel = openPanels.get(targetUri.fsPath);
-  if (existingPanel) {
-    existingPanel.reveal(vscode.ViewColumn.Beside);
-    return;
-  }
-
-  let xml: string;
-  try {
-    const raw = await vscode.workspace.fs.readFile(targetUri);
-    xml = new TextDecoder().decode(raw);
-  } catch (error) {
-    vscode.window.showErrorMessage(`Unable to read ${targetUri.fsPath}: ${(error as Error).message}`);
-    return;
-  }
-
-  let parsed;
-  try {
-    parsed = await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: "Parsing SFCC pipeline...",
-      },
-      async () => parsePipeline(xml, basename(targetUri.fsPath))
-    );
-  } catch (error) {
-    vscode.window.showErrorMessage(`Failed to parse pipeline: ${(error as Error).message}`);
-    return;
-  }
-
-  const panel = vscode.window.createWebviewPanel(
-    "sfccPipelineVisualizer",
-    `Pipeline: ${parsed.name}`,
-    vscode.ViewColumn.Beside,
-    {
-      enableScripts: true,
-      retainContextWhenHidden: true,
-      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "node_modules")],
-    }
-  );
-
-  panel.webview.html = getWebviewContent({
-    webview: panel.webview,
-    pipeline: parsed,
-    sourceUri: targetUri,
-    extensionUri: context.extensionUri,
-  });
-
-  // Handle messages from the webview
-  panel.webview.onDidReceiveMessage(
-    async (message) => {
-      switch (message.type) {
-        case "navigateToPipeline":
-          await handleNavigateToPipeline(context, message.pipeline, message.startNode);
-          break;
-      }
-    },
-    undefined,
-    context.subscriptions
-  );
-
-  // Track the panel
-  openPanels.set(targetUri.fsPath, panel);
-
-  // Clean up when panel is closed
-  panel.onDidDispose(() => {
-    openPanels.delete(targetUri.fsPath);
-  });
-}
-
-/**
- * Refresh the content of an existing panel when the source file changes.
- */
-async function refreshPanelContent(panel: vscode.WebviewPanel, uri: vscode.Uri): Promise<void> {
-  let xml: string;
-  try {
-    const raw = await vscode.workspace.fs.readFile(uri);
-    xml = new TextDecoder().decode(raw);
-  } catch {
-    return; // Silently fail on refresh errors
-  }
-
-  let parsed;
-  try {
-    parsed = parsePipeline(xml, basename(uri.fsPath));
-  } catch {
-    return; // Silently fail on parse errors during refresh
-  }
-
-  panel.webview.html = getWebviewContent({
-    webview: panel.webview,
-    pipeline: parsed,
-    sourceUri: uri,
-    extensionUri,
-  });
+  documentWebviews.clear();
 }
 
 /**
@@ -203,75 +206,35 @@ async function handleNavigateToPipeline(
     return;
   }
 
-  // Check if panel already exists for this file
-  const existingPanel = openPanels.get(pipelineUri.fsPath);
-  if (existingPanel) {
-    existingPanel.reveal(vscode.ViewColumn.Beside);
+  // Check if there's already a webview for this document
+  const existingWebview = documentWebviews.get(pipelineUri.toString());
+  if (existingWebview) {
+    existingWebview.reveal();
     // Send message to navigate to the start node
-    existingPanel.webview.postMessage({
+    existingWebview.webview.postMessage({
       type: "navigateToStartNode",
       startNode: startNode,
     });
     return;
   }
 
-  // Open the pipeline file
-  let xml: string;
-  try {
-    const raw = await vscode.workspace.fs.readFile(pipelineUri);
-    xml = new TextDecoder().decode(raw);
-  } catch (error) {
-    vscode.window.showErrorMessage(`Unable to read ${pipelineUri.fsPath}: ${(error as Error).message}`);
-    return;
-  }
+  // Open with our custom editor
+  await vscode.commands.executeCommand(
+    "vscode.openWith",
+    pipelineUri,
+    PipelineEditorProvider.viewType
+  );
 
-  let parsed;
-  try {
-    parsed = parsePipeline(xml, basename(pipelineUri.fsPath));
-  } catch (error) {
-    vscode.window.showErrorMessage(`Failed to parse pipeline: ${(error as Error).message}`);
-    return;
-  }
-
-  const panel = vscode.window.createWebviewPanel(
-    "sfccPipelineVisualizer",
-    `Pipeline: ${parsed.name}`,
-    vscode.ViewColumn.Beside,
-    {
-      enableScripts: true,
-      retainContextWhenHidden: true,
-      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "node_modules")],
+  // After opening, send navigation message
+  setTimeout(() => {
+    const webview = documentWebviews.get(pipelineUri.toString());
+    if (webview) {
+      webview.webview.postMessage({
+        type: "navigateToStartNode",
+        startNode: startNode,
+      });
     }
-  );
-
-  panel.webview.html = getWebviewContent({
-    webview: panel.webview,
-    pipeline: parsed,
-    sourceUri: pipelineUri,
-    extensionUri: context.extensionUri,
-    navigateToStartNode: startNode,
-  });
-
-  // Handle messages from the webview
-  panel.webview.onDidReceiveMessage(
-    async (message) => {
-      switch (message.type) {
-        case "navigateToPipeline":
-          await handleNavigateToPipeline(context, message.pipeline, message.startNode);
-          break;
-      }
-    },
-    undefined,
-    context.subscriptions
-  );
-
-  // Track the panel
-  openPanels.set(pipelineUri.fsPath, panel);
-
-  // Clean up when panel is closed
-  panel.onDidDispose(() => {
-    openPanels.delete(pipelineUri.fsPath);
-  });
+  }, 500);
 }
 
 /**
@@ -305,7 +268,7 @@ async function findPipelineFile(pipelineName: string): Promise<vscode.Uri | unde
   const allXmlFiles = await vscode.workspace.findFiles("**/*.xml", "**/node_modules/**", 100);
   for (const file of allXmlFiles) {
     const fileName = basename(file.fsPath).toLowerCase();
-    if (fileName.toLowerCase() === pipelineName.toLowerCase()) {
+    if (fileName === pipelineName.toLowerCase()) {
       try {
         const raw = await vscode.workspace.fs.readFile(file);
         const content = new TextDecoder().decode(raw);
@@ -368,4 +331,13 @@ function basename(path: string): string {
   const last = segments.pop() || path;
   const dot = last.lastIndexOf(".");
   return dot > 0 ? last.slice(0, dot) : last;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }

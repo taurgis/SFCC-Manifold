@@ -72,10 +72,11 @@ export function getMainScript(): string {
 
       // Setup stage click to deselect
       stage.on("click", function(e) {
-        // Only deselect if clicking on empty area (not on a node)
+        // Only deselect if clicking on empty area (not on a node or edge)
         if (e.target === stage) {
           hidePropertiesPanel();
           clearSelection();
+          clearEdgeSelection(layer);
           layer.batchDraw();
         }
       });

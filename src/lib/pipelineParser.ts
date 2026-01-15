@@ -240,12 +240,12 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
 
     switch (typeEl.tagName) {
       case "start-node": {
-        const name = attrs.name ? ` ${attrs.name}` : "";
-        return { type: "start", label: `Start${name}`.trim(), attributes: attrs };
+        const name = attrs.name || "Start";
+        return { type: "start", label: name, attributes: attrs };
       }
       case "end-node": {
-        const name = attrs.name ? ` ${attrs.name}` : "";
-        return { type: "end", label: `End${name}`.trim(), attributes: attrs };
+        const name = attrs.name || "End";
+        return { type: "end", label: name, attributes: attrs };
       }
       case "pipelet-node": {
         const pipeletName = attrs["pipelet-name"] || "Pipelet";
