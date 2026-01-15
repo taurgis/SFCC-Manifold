@@ -153,7 +153,10 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
         nestedBranch.getAttribute("basename") ||
         "branch";
 
-      const nestedPath = `${branchPath}/${nestedBranch.getAttribute("basename") || connectorLabel}`;
+      // Include segment and node index in the path to ensure uniqueness
+      // This prevents ID collisions when different nodes have branches with the same basename
+      const branchBasename = nestedBranch.getAttribute("basename") || connectorLabel;
+      const nestedPath = `${branchPath}:${segmentIndex}:${nodeIndex}/${branchBasename}`;
       
       // Parse the transition element within the branch for display info
       const transitionEl = findFirstElement(nestedBranch, (el) => el.tagName === "transition" || el.tagName === "simple-transition");

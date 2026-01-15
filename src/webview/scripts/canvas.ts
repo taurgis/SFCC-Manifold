@@ -309,6 +309,54 @@ export function getCanvasScript(): string {
         return l === "no" || l === "false";
       }
 
+      /**
+       * Get anchor point based on connector name from XML
+       * Legacy connectors: in, in1, in2, out, out1, out2, error, yes, no, loop
+       */
+      function getConnectorAnchor(node, connector, offset) {
+        offset = offset || 0;
+        var cx = node.x + nodeWidth / 2;
+        var cy = node.y + nodeHeight / 2;
+        
+        // Normalize connector name
+        var conn = (connector || "").toLowerCase();
+        
+        // Top connectors (inputs)
+        if (conn === "in" || conn === "in1") {
+          return { x: cx + offset, y: node.y, side: "top" };
+        }
+        if (conn === "in2") {
+          return { x: cx + 30 + offset, y: node.y, side: "top" };
+        }
+        if (conn === "loop") {
+          return { x: cx - 30 + offset, y: node.y, side: "top" };
+        }
+        
+        // Bottom connectors (outputs - default flow)
+        if (conn === "out" || conn === "out1" || conn === "next" || conn === "") {
+          return { x: cx + offset, y: node.y + nodeHeight, side: "bottom" };
+        }
+        if (conn === "out2") {
+          return { x: cx + 30 + offset, y: node.y + nodeHeight, side: "bottom" };
+        }
+        
+        // Right connectors (error, yes)
+        if (conn === "error" || conn === "pipelet_error") {
+          return { x: node.x + nodeWidth, y: cy + offset, side: "right" };
+        }
+        if (conn === "yes" || conn === "true") {
+          return { x: node.x + nodeWidth, y: cy + offset, side: "right" };
+        }
+        
+        // Left connectors (no)
+        if (conn === "no" || conn === "false") {
+          return { x: node.x, y: cy + offset, side: "left" };
+        }
+        
+        // Default to bottom
+        return { x: cx + offset, y: node.y + nodeHeight, side: "bottom" };
+      }
+
       function getAnchor(node, side, offset) {
         if (side === "top") return { x: node.x + nodeWidth / 2 + offset, y: node.y };
         if (side === "bottom") return { x: node.x + nodeWidth / 2 + offset, y: node.y + nodeHeight };
@@ -323,109 +371,307 @@ export function getCanvasScript(): string {
         return 0;
       }
 
-      function determineSides(edge, fromNode, toNode) {
+      /**
+       * Convert bend point grid coordinates to pixel coordinates
+       * Bend points are specified relative to either source or target node
+       * The x,y values are GRID offsets (not pixels)
+       */
+      function bendPointToPixel(bendPoint, fromNode, toNode) {
+        var refNode = bendPoint.relativeTo === "target" ? toNode : fromNode;
+        // Use node center as reference point
+        var refX = refNode.x + nodeWidth / 2;
+        var refY = refNode.y + nodeHeight / 2;
+        
+        // Scale bend point offsets - they're in grid units but smaller scale
+        // Typically x=1 means "offset by about half a node width"
+        var scaleFactor = 50; // Smaller scale for bend point offsets
+        
+        return {
+          x: refX + (bendPoint.x * scaleFactor),
+          y: refY + (bendPoint.y * scaleFactor)
+        };
+      }
+
+      /**
+       * Build path through waypoints
+       * Creates orthogonal (right-angle) paths connecting start → waypoints → end
+       * Uses startOffset and endOffset to prevent overlapping parallel lines
+       */
+      function buildOrthogonalPath(start, end, bendPoints, fromNode, toNode, outSide, inSide, startOffset, endOffset) {
+        var points = [start.x, start.y];
+        
+        // Use offsets for routing to prevent overlap
+        startOffset = startOffset || 0;
+        endOffset = endOffset || 0;
+        
+        if (bendPoints && bendPoints.length > 0) {
+          // Convert bend points to waypoints
+          var waypoints = [];
+          for (var i = 0; i < bendPoints.length; i++) {
+            waypoints.push(bendPointToPixel(bendPoints[i], fromNode, toNode));
+          }
+          
+          // Build path through waypoints with orthogonal segments
+          var currentX = start.x;
+          var currentY = start.y;
+          
+          // Determine initial direction based on exit side
+          var goHorizontalFirst = (outSide === "right" || outSide === "left");
+          
+          for (var i = 0; i < waypoints.length; i++) {
+            var wp = waypoints[i];
+            var dx = wp.x - currentX;
+            var dy = wp.y - currentY;
+            
+            // Skip if waypoint is very close to current position
+            if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
+              continue;
+            }
+            
+            // Create orthogonal path to this waypoint
+            if (goHorizontalFirst) {
+              // Go horizontal first, then vertical
+              if (Math.abs(dx) > 5) {
+                currentX = wp.x;
+                points.push(currentX, currentY);
+              }
+              if (Math.abs(dy) > 5) {
+                currentY = wp.y;
+                points.push(currentX, currentY);
+              }
+            } else {
+              // Go vertical first, then horizontal
+              if (Math.abs(dy) > 5) {
+                currentY = wp.y;
+                points.push(currentX, currentY);
+              }
+              if (Math.abs(dx) > 5) {
+                currentX = wp.x;
+                points.push(currentX, currentY);
+              }
+            }
+            
+            // Alternate direction for next segment
+            goHorizontalFirst = !goHorizontalFirst;
+          }
+          
+          // Final segment to end point
+          var finalDx = end.x - currentX;
+          var finalDy = end.y - currentY;
+          
+          if (Math.abs(finalDx) > 5 && Math.abs(finalDy) > 5) {
+            // Need one more turn
+            if (inSide === "top" || inSide === "bottom") {
+              // Enter vertically - go horizontal first
+              points.push(end.x, currentY);
+            } else {
+              // Enter horizontally - go vertical first
+              points.push(currentX, end.y);
+            }
+          }
+        } else {
+          // No bend points - use smart routing based on sides
+          var dx = end.x - start.x;
+          var dy = end.y - start.y;
+          
+          if (outSide === "bottom" && inSide === "top") {
+            // Standard downward flow
+            if (Math.abs(dx) > 5) {
+              // Nodes not aligned - need to route with a horizontal segment
+              var midY = (start.y + end.y) / 2;
+              points.push(start.x, midY);
+              points.push(end.x, midY);
+            }
+            // If aligned (dx <= 5), just go straight down - no intermediate points needed
+          } else if (outSide === "right" && inSide === "top") {
+            // Decision YES or error going to node below
+            // Go RIGHT first to clear the source node, then DOWN, then LEFT above target, then DOWN to target
+            // Use startOffset for lane spacing when multiple edges exit same node
+            // Also use relative Y position to offset lanes for edges from different nodes
+            var laneSpacing = Math.abs(startOffset) * 7.5;
+            var baseClearance = 30;
+            // If target is to the left, we need to go even further right to clear
+            if (dx < 0) {
+              baseClearance = 50;
+            }
+            // Add additional offset based on vertical distance to prevent overlap
+            // Edges going further down get lanes further right
+            var distanceOffset = Math.min(Math.abs(dy) / 7, 90);
+            var clearanceX = start.x + nodeWidth / 2 + baseClearance + laneSpacing + distanceOffset;
+            // Go above the target first, then come straight down to enter from top
+            var aboveTargetY = end.y - 20;
+            points.push(clearanceX, start.y);
+            points.push(clearanceX, aboveTargetY);
+            points.push(end.x, aboveTargetY);
+          } else if (outSide === "left" && inSide === "top") {
+            // Decision NO going to node below
+            // Go LEFT first to clear, then DOWN, then RIGHT above target, then DOWN to target
+            // Use startOffset for lane spacing when multiple edges exit same node
+            var laneSpacing = Math.abs(startOffset) * 7.5;
+            var baseClearance = 30;
+            // If target is to the right, need to go further left
+            if (dx > 0) {
+              baseClearance = 50;
+            }
+            // Add additional offset based on vertical distance to prevent overlap
+            var distanceOffset = Math.min(Math.abs(dy) / 7, 90);
+            var clearanceX = start.x - nodeWidth / 2 - baseClearance - laneSpacing - distanceOffset;
+            // Go above the target first, then come straight down to enter from top
+            var aboveTargetY = end.y - 20;
+            points.push(clearanceX, start.y);
+            points.push(clearanceX, aboveTargetY);
+            points.push(end.x, aboveTargetY);
+          } else if (outSide === "right" && inSide === "left") {
+            // Horizontal connection
+            if (Math.abs(dy) > 10) {
+              var midX = (start.x + end.x) / 2;
+              var routeY = start.y + startOffset;
+              points.push(midX, routeY);
+              points.push(midX, end.y + endOffset);
+            }
+          } else if (outSide === "left" && inSide === "right") {
+            if (Math.abs(dy) > 10) {
+              var midX = (start.x + end.x) / 2;
+              var routeY = start.y + startOffset;
+              points.push(midX, routeY);
+              points.push(midX, end.y + endOffset);
+            }
+          } else if (outSide === "bottom" && inSide === "left") {
+            // Go down then right - use offset on vertical segment
+            var routeX = start.x + startOffset;
+            points.push(routeX, end.y);
+          } else if (outSide === "bottom" && inSide === "right") {
+            // Go down then left - use offset on vertical segment
+            var routeX = start.x + startOffset;
+            points.push(routeX, end.y);
+          } else if (outSide === "top" && inSide === "bottom") {
+            // Going upward
+            if (Math.abs(dx) > 5) {
+              var midY = (start.y + end.y) / 2;
+              var routeX = start.x + startOffset;
+              points.push(routeX, midY);
+              points.push(end.x + endOffset, midY);
+            }
+          } else if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+            // Default: L-shape based on exit direction
+            if (outSide === "right" || outSide === "left") {
+              points.push(end.x, start.y);
+            } else {
+              points.push(start.x, end.y);
+            }
+          }
+        }
+        
+        points.push(end.x, end.y);
+        return points;
+      }
+
+      function determineSides(edge, fromNode, toNode, nodeMap) {
         var label = edge.label;
         var isError = isErrorEdge(label);
         var dx = (toNode.x + nodeWidth / 2) - (fromNode.x + nodeWidth / 2);
         var dy = (toNode.y + nodeHeight / 2) - (fromNode.y + nodeHeight / 2);
 
-        // Default: flow downward
+        // Check if edge has connector info from XML - this takes priority
+        var sourceConn = (edge.sourceConnector || "").toLowerCase();
+        var targetConn = (edge.targetConnector || "").toLowerCase();
+        
+        // Default sides
         var outSide = "bottom";
         var inSide = "top";
-
-        // Legacy-like behavior: errors leave from the right side of the source node.
-        // Entry side depends on target placement:
-        // - target directly below: enter on the right (matches legacy connector placement)
-        // - target to the right: enter on the left
-        // - target to the left: enter on the right
-        if (isError) {
-          outSide = "right";
-
-          var mostlyBelow = dy > nodeHeight * 0.3;
-          var targetRight = dx > nodeWidth * 0.3;
-          var targetLeft = dx < -nodeWidth * 0.3;
-          var horizontallyAligned = Math.abs(dx) <= nodeWidth * 0.3;
-
-          if (targetRight) {
-            inSide = "left";
-          } else if (targetLeft) {
-            inSide = "right";
-          } else if (mostlyBelow && horizontallyAligned) {
-            inSide = "right";
-          } else {
-            // Fallback: prefer left entry when roughly aligned or slightly right
-            inSide = dx >= 0 ? "left" : "right";
+        
+        // Target positions
+        var targetToRight = dx > nodeWidth * 0.3;
+        var targetToLeft = dx < -nodeWidth * 0.3;
+        var targetBelow = dy > nodeHeight * 0.3;
+        var targetDirectlyBelow = Math.abs(dx) < nodeWidth * 0.5 && dy > 0;
+        
+        // Check if the cell directly below the source node is empty
+        // This helps determine if we can go straight down
+        var cellBelowEmpty = true;
+        if (nodeMap) {
+          var sourceBottomY = fromNode.y + nodeHeight;
+          var targetTopY = toNode.y;
+          // Check if any node occupies the space between source and target
+          for (var nodeId in nodeMap) {
+            if (nodeId === fromNode.id || nodeId === toNode.id) continue;
+            var otherNode = nodeMap[nodeId];
+            var otherCenterX = otherNode.x + nodeWidth / 2;
+            var sourceCenterX = fromNode.x + nodeWidth / 2;
+            // Check if node is in the vertical path
+            if (Math.abs(otherCenterX - sourceCenterX) < nodeWidth * 0.8) {
+              // Node is in same column
+              if (otherNode.y > sourceBottomY && otherNode.y < targetTopY) {
+                // Node is between source and target
+                cellBelowEmpty = false;
+                break;
+              }
+            }
           }
-
-          return { outSide: outSide, inSide: inSide };
         }
-
-        // Decision branches: push yes/right, no/left (helps reduce overlaps).
-        // If the branch target is stacked below, enter from the top to avoid awkward side-entry.
-        if (isDecisionYes(label)) {
+        
+        // Source connector determines exit side
+        // Decision branches ALWAYS exit from their designated side for visual clarity
+        // EXCEPTION: if target is directly below AND path is clear, go straight down
+        if (sourceConn === "error" || sourceConn === "pipelet_error" || isError) {
           outSide = "right";
-          inSide = (dy > nodeHeight * 0.3 && Math.abs(dy) >= Math.abs(dx)) ? "top" : "left";
-          return { outSide: outSide, inSide: inSide };
-        }
-        if (isDecisionNo(label)) {
-          outSide = "left";
-          inSide = (dy > nodeHeight * 0.3 && Math.abs(dy) >= Math.abs(dx)) ? "top" : "right";
-          return { outSide: outSide, inSide: inSide };
-        }
-
-        // If target is significantly to the side, prefer side exits/entries
-        if (Math.abs(dx) > 220 && Math.abs(dx) > Math.abs(dy)) {
-          if (dx > 0) {
-            outSide = "right";
-            inSide = "left";
+        } else if (sourceConn === "yes" || sourceConn === "true") {
+          // YES branch: normally exits right, but if target is directly below
+          // with only 1 vertical gap and path is clear, go straight down
+          if (targetDirectlyBelow && cellBelowEmpty && dy < verticalGap * 1.5) {
+            outSide = "bottom";
           } else {
-            outSide = "left";
-            inSide = "right";
+            outSide = "right";  // YES always exits right
           }
-          return { outSide: outSide, inSide: inSide };
+        } else if (sourceConn === "no" || sourceConn === "false") {
+          // NO branch: normally exits left, but if target is directly below
+          // with only 1 vertical gap and path is clear, go straight down
+          if (targetDirectlyBelow && cellBelowEmpty && dy < verticalGap * 1.5) {
+            outSide = "bottom";
+          } else {
+            outSide = "left";   // NO always exits left
+          }
         }
-
-        // Otherwise keep top/bottom
-        return { outSide: outSide, inSide: inSide };
-      }
-
-      function buildManhattanPoints(start, end, outSide, inSide) {
-        function nudge(p, side, amount) {
-          if (side === "top") return { x: p.x, y: p.y - amount };
-          if (side === "bottom") return { x: p.x, y: p.y + amount };
-          if (side === "left") return { x: p.x - amount, y: p.y };
-          return { x: p.x + amount, y: p.y };
-        }
-
-        var p0 = start;
-        var p3 = end;
-        var p1 = nudge(p0, outSide, EDGE_PAD);
-        var p2 = nudge(p3, inSide, EDGE_PAD);
-
-        // Choose a dogleg that avoids running through the source/target rectangles
-        var points = [p0.x, p0.y];
-
-        // Simple orthogonal routing with a single bend or two bends depending on sides
-        if ((outSide === "left" || outSide === "right") && (inSide === "left" || inSide === "right")) {
-          var midX = (p1.x + p2.x) / 2;
-          points.push(p1.x, p1.y);
-          points.push(midX, p1.y);
-          points.push(midX, p2.y);
-          points.push(p2.x, p2.y);
-        } else if ((outSide === "top" || outSide === "bottom") && (inSide === "top" || inSide === "bottom")) {
-          var midY = (p1.y + p2.y) / 2;
-          points.push(p1.x, p1.y);
-          points.push(p1.x, midY);
-          points.push(p2.x, midY);
-          points.push(p2.x, p2.y);
+        
+        // Target connector determines entry side - RESPECT XML if specified
+        if (targetConn === "in" || targetConn === "in1" || targetConn === "in2") {
+          inSide = "top";
+        } else if (targetConn === "loop") {
+          inSide = "top";
+        } else if (targetConn === "left") {
+          inSide = "left";
+        } else if (targetConn === "right") {
+          inSide = "right";
+        } else if (targetConn === "bottom") {
+          inSide = "bottom";
+        } else if (targetConn) {
+          inSide = "top";
         } else {
-          points.push(p1.x, p1.y);
-          points.push(p1.x, p2.y);
-          points.push(p2.x, p2.y);
+          // No target connector - determine based on position and exit side
+          if (outSide === "right") {
+            // Exiting right (yes branch or error)
+            if (targetToRight) {
+              inSide = "left";  // Target to right - enter from left
+            } else {
+              inSide = "top";   // Target below or left - enter from top
+            }
+          } else if (outSide === "left") {
+            // Exiting left (no branch)
+            if (targetToLeft) {
+              inSide = "right"; // Target to left - enter from right
+            } else {
+              inSide = "top";   // Target below or right - enter from top
+            }
+          }
+        }
+        
+        // Handle back edges (target above source)
+        if (dy < -nodeHeight && !targetConn) {
+          if (outSide === "bottom") outSide = "top";
+          if (inSide === "top") inSide = "bottom";
         }
 
-        points.push(p3.x, p3.y);
-        return points;
+        return { outSide: outSide, inSide: inSide };
       }
 
       // First pass: plan routes and count per-side exits/entries so we can offset them
@@ -444,7 +690,7 @@ export function getCanvasScript(): string {
         if (!fromNode || !toNode) continue;
 
         var edgeId = "edge-" + i + "-" + edge.from + "-" + edge.to;
-        var sides = determineSides(edge, fromNode, toNode);
+        var sides = determineSides(edge, fromNode, toNode, nodeMap);
 
         var outKey = edge.from + "|" + sides.outSide;
         var inKey = edge.to + "|" + sides.inSide;
@@ -482,6 +728,7 @@ export function getCanvasScript(): string {
         // Get color based on edge label
         var edgeColor = getEdgeColor(edge.label);
         var isBackEdge = isLoopBackEdge(edge.label);
+        var isError = isErrorEdge(edge.label);
 
         // Offsets distribute multiple edges leaving/entering the same side
         var outKey = edge.from + "|" + plan.outSide;
@@ -492,13 +739,29 @@ export function getCanvasScript(): string {
         var start = getAnchor(fromNode, plan.outSide, (plan.outSide === "top" || plan.outSide === "bottom") ? outOffset : outOffset);
         var end = getAnchor(toNode, plan.inSide, (plan.inSide === "top" || plan.inSide === "bottom") ? inOffset : inOffset);
 
+        // For straight vertical connections (bottom→top), align X coordinates if nodes are nearly aligned
+        var fromCenterX = fromNode.x + nodeWidth / 2;
+        var toCenterX = toNode.x + nodeWidth / 2;
+        var nodesAligned = Math.abs(fromCenterX - toCenterX) < 5;
+        
+        if (plan.outSide === "bottom" && plan.inSide === "top" && nodesAligned) {
+          // Use the same X for both anchors to ensure a perfectly straight line
+          var alignedX = fromCenterX;
+          start = { x: alignedX, y: fromNode.y + nodeHeight };
+          end = { x: alignedX, y: toNode.y };
+        }
+
+        // Check if edge has bend points from XML
+        var bendPoints = (edge.display && edge.display.bendPoints) ? edge.display.bendPoints : null;
+        var hasBendPoints = bendPoints && bendPoints.length > 0;
+
         // Backward edges (or target above) keep the existing left-loop curve
         var isGoingUp = end.y < start.y - 5;
 
         var points;
         var arrowAngle;
 
-        if (isBackEdge || isGoingUp) {
+        if (isBackEdge || (isGoingUp && !hasBendPoints)) {
           // Use bottom->top anchors for loops to look like the legacy editor
           var x1 = fromNode.x + nodeWidth / 2;
           var y1 = fromNode.y + nodeHeight;
@@ -530,13 +793,13 @@ export function getCanvasScript(): string {
 
           end = { x: x2, y: y2 };
           arrowAngle = -Math.PI / 2;
+        } else if (hasBendPoints) {
+          // Use XML bend points for routing
+          points = buildOrthogonalPath(start, end, bendPoints, fromNode, toNode, plan.outSide, plan.inSide, outOffset, inOffset);
+          arrowAngle = getArrowAngleForSide(plan.inSide);
         } else {
-          // Prefer straight vertical for near-aligned top/bottom
-          if (plan.outSide === "bottom" && plan.inSide === "top" && Math.abs(start.x - end.x) < 20) {
-            points = [start.x, start.y, end.x, end.y];
-          } else {
-            points = buildManhattanPoints(start, end, plan.outSide, plan.inSide);
-          }
+          // No bend points - use simple routing
+          points = buildOrthogonalPath(start, end, null, fromNode, toNode, plan.outSide, plan.inSide, outOffset, inOffset);
           arrowAngle = getArrowAngleForSide(plan.inSide);
         }
 

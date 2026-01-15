@@ -33,7 +33,7 @@ export function getLayoutScript(): string {
         var nodeGridPositions = {}; // nodeId -> {gridX, gridY}
         var occupiedCells = {}; // "gridX,gridY" -> true
         
-        // First pass: identify top-level branches (those without '/' in the path)
+        // First pass: identify top-level branches (those without '/' in the branch path)
         var topLevelBranches = {};
         for (var i = 0; i < nodes.length; i++) {
           var branch = nodes[i].branch;
@@ -49,13 +49,6 @@ export function getLayoutScript(): string {
           
           // Determine the absolute grid position
           var gridX, gridY;
-          
-          // Parse the node ID to understand its position in the segment
-          // Format: "branchPath:segmentIndex:nodeIndex"
-          var idParts = node.id.split(':');
-          var branchPath = idParts[0];
-          var segmentIndex = parseInt(idParts[1], 10);
-          var nodeIndexInSegment = parseInt(idParts[2], 10);
           
           // Check if this is the first node in its branch (ever)
           var isFirstInBranch = isFirstNodeInBranch(node.id, nodes, i);
@@ -161,12 +154,12 @@ export function getLayoutScript(): string {
      * Check if this is the first node encountered in its branch
      */
     function isFirstNodeInBranch(nodeId, allNodes, currentIndex) {
-      var parts = nodeId.split(':');
-      var branchPath = parts[0];
+      // Use the branch property from the node, not parsed from ID
+      var currentNode = allNodes[currentIndex];
+      var branchPath = currentNode.branch;
       
       for (var i = 0; i < currentIndex; i++) {
-        var otherParts = allNodes[i].id.split(':');
-        if (otherParts[0] === branchPath) {
+        if (allNodes[i].branch === branchPath) {
           return false;
         }
       }
@@ -175,31 +168,45 @@ export function getLayoutScript(): string {
     
     /**
      * Find the position of the parent branch's node (the one that spawned this branch)
+     * Branch format: "ParentBranch:segmentIndex:nodeIndex/branchBasename"
+     * e.g., "Show:0:3/b2" means the parent node is "Show:0:3" in branch "Show"
      */
     function findParentNodePosition(node, nodeGridPositions, allNodes, currentIndex) {
-      var branchParts = node.branch.split('/');
-      if (branchParts.length < 2) return null;
+      var branch = node.branch;
+      var slashIndex = branch.lastIndexOf('/');
+      if (slashIndex === -1) return null;
       
-      var parentBranch = branchParts.slice(0, -1).join('/');
+      // The part before the last '/' contains the parent node's ID
+      // e.g., for "Show:0:3/b2", parentNodeId is "Show:0:3"
+      var parentNodeId = branch.substring(0, slashIndex);
       
-      // Look backwards for the most recent node in the parent branch
-      for (var i = currentIndex - 1; i >= 0; i--) {
-        var otherNode = allNodes[i];
-        if (otherNode.branch === parentBranch) {
-          var pos = nodeGridPositions[otherNode.id];
-          if (pos) return pos;
+      // Look for this exact node ID
+      var pos = nodeGridPositions[parentNodeId];
+      if (pos) return pos;
+      
+      // If not found by exact ID, try to find by branch matching
+      // Extract parent branch (everything before the last segment:index part)
+      var lastColonBeforeSlash = parentNodeId.lastIndexOf(':');
+      if (lastColonBeforeSlash > 0) {
+        var secondLastColon = parentNodeId.lastIndexOf(':', lastColonBeforeSlash - 1);
+        if (secondLastColon > 0) {
+          var parentBranch = parentNodeId.substring(0, secondLastColon);
+          // Look backwards for the most recent node in the parent branch
+          for (var i = currentIndex - 1; i >= 0; i--) {
+            var otherNode = allNodes[i];
+            if (otherNode.id === parentNodeId) {
+              var pos = nodeGridPositions[otherNode.id];
+              if (pos) return pos;
+            }
+          }
         }
       }
       
-      // Try grandparent branch
-      if (branchParts.length > 2) {
-        var grandparentBranch = branchParts.slice(0, -2).join('/');
-        for (var i = currentIndex - 1; i >= 0; i--) {
-          var otherNode = allNodes[i];
-          if (otherNode.branch === grandparentBranch) {
-            var pos = nodeGridPositions[otherNode.id];
-            if (pos) return pos;
-          }
+      // Fallback: look for any node whose ID matches the parent path
+      for (var i = currentIndex - 1; i >= 0; i--) {
+        if (allNodes[i].id === parentNodeId) {
+          var pos = nodeGridPositions[allNodes[i].id];
+          if (pos) return pos;
         }
       }
       
