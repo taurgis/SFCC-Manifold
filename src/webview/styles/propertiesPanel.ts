@@ -27,6 +27,38 @@ export function getPropertiesPanelStyles(): string {
       transform: translateX(0);
     }
 
+    /* Resize Handle */
+    .properties-resize-handle {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      cursor: ew-resize;
+      background: transparent;
+      z-index: 10;
+      transition: background 0.15s ease;
+    }
+
+    .properties-resize-handle:hover,
+    .properties-resize-handle.dragging {
+      background: var(--accent);
+    }
+
+    .properties-panel.resizing {
+      transition: none;
+      user-select: none;
+    }
+
+    body.resizing-panel {
+      cursor: ew-resize !important;
+      user-select: none !important;
+    }
+
+    body.resizing-panel * {
+      cursor: ew-resize !important;
+    }
+
     .properties-header {
       padding: 0;
       border-bottom: 1px solid var(--border);

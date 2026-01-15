@@ -30,6 +30,21 @@ class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
     // Track the webview
     documentWebviews.set(document.uri.toString(), webviewPanel);
 
+    // Listen for messages from the webview
+    const messageSubscription = webviewPanel.webview.onDidReceiveMessage(
+      async (message) => {
+        switch (message.type) {
+          case "navigateToPipeline":
+            await this.handleNavigateToPipeline(
+              document,
+              message.pipeline,
+              message.startNode
+            );
+            break;
+        }
+      }
+    );
+
     // Listen for document changes
     const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === document.uri.toString()) {
@@ -40,8 +55,78 @@ class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
     // Clean up when the editor is closed
     webviewPanel.onDidDispose(() => {
       changeDocumentSubscription.dispose();
+      messageSubscription.dispose();
       documentWebviews.delete(document.uri.toString());
     });
+  }
+
+  /**
+   * Handle navigation to another pipeline file
+   */
+  private async handleNavigateToPipeline(
+    currentDocument: vscode.TextDocument,
+    pipelineName: string,
+    startNode: string
+  ): Promise<void> {
+    // Find the pipeline file in the workspace
+    const pipelineFile = await this.findPipelineFile(currentDocument, pipelineName);
+    
+    if (!pipelineFile) {
+      vscode.window.showWarningMessage(`Pipeline "${pipelineName}" not found in workspace.`);
+      return;
+    }
+
+    // Open the pipeline file with our custom editor
+    await vscode.commands.executeCommand(
+      "vscode.openWith",
+      pipelineFile,
+      PipelineEditorProvider.viewType
+    );
+
+    // After opening, send a message to navigate to the start node
+    // We need to wait a bit for the webview to initialize
+    setTimeout(() => {
+      const panel = documentWebviews.get(pipelineFile.toString());
+      if (panel && startNode) {
+        panel.webview.postMessage({
+          type: "navigateToStartNode",
+          startNode: startNode,
+        });
+      }
+    }, 500);
+  }
+
+  /**
+   * Find a pipeline file by name in the workspace
+   */
+  private async findPipelineFile(
+    currentDocument: vscode.TextDocument,
+    pipelineName: string
+  ): Promise<vscode.Uri | undefined> {
+    // First, check in the same directory as the current document
+    const currentDir = vscode.Uri.joinPath(currentDocument.uri, "..");
+    const sameDirPath = vscode.Uri.joinPath(currentDir, `${pipelineName}.xml`);
+    
+    try {
+      await vscode.workspace.fs.stat(sameDirPath);
+      return sameDirPath;
+    } catch {
+      // File doesn't exist in same directory, search workspace
+    }
+
+    // Search the entire workspace for the pipeline file
+    const pattern = `**/${pipelineName}.xml`;
+    const files = await vscode.workspace.findFiles(pattern, "**/node_modules/**", 10);
+    
+    if (files.length > 0) {
+      // Prefer files in a "pipelines" directory if multiple found
+      const pipelinesDir = files.find((f) => 
+        f.fsPath.includes("/pipelines/") || f.fsPath.includes("\\pipelines\\")
+      );
+      return pipelinesDir || files[0];
+    }
+
+    return undefined;
   }
 
   private async updateWebview(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel): Promise<void> {

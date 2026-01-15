@@ -30,6 +30,52 @@ export function getSelectionScript(): string {
           clearSelection();
         }
       });
+
+      // Initialize resize functionality
+      initPanelResize();
+    }
+
+    /**
+     * Initialize panel resize drag functionality
+     */
+    function initPanelResize() {
+      var panel = document.getElementById("propertiesPanel");
+      var handle = document.getElementById("propertiesResizeHandle");
+      var isResizing = false;
+      var startX = 0;
+      var startWidth = 0;
+      var minWidth = 280;
+      var maxWidth = 600;
+
+      handle.addEventListener("mousedown", function(e) {
+        isResizing = true;
+        startX = e.clientX;
+        startWidth = panel.offsetWidth;
+        
+        panel.classList.add("resizing");
+        handle.classList.add("dragging");
+        document.body.classList.add("resizing-panel");
+        
+        e.preventDefault();
+      });
+
+      document.addEventListener("mousemove", function(e) {
+        if (!isResizing) return;
+        
+        var delta = startX - e.clientX;
+        var newWidth = Math.min(maxWidth, Math.max(minWidth, startWidth + delta));
+        panel.style.width = newWidth + "px";
+        panel.style.minWidth = newWidth + "px";
+      });
+
+      document.addEventListener("mouseup", function() {
+        if (isResizing) {
+          isResizing = false;
+          panel.classList.remove("resizing");
+          handle.classList.remove("dragging");
+          document.body.classList.remove("resizing-panel");
+        }
+      });
     }
 
     /**
@@ -150,6 +196,7 @@ export function getSelectionScript(): string {
       content.innerHTML = renderNodeHeader(node, color) +
                           renderLocationSection(node) +
                           renderDescriptionSection(node) +
+                          renderConfigPropertiesSection(node) +
                           renderBindingsSection(node) +
                           renderTemplateSection(node) +
                           renderConnectionsSection(incoming, outgoing, node) +
@@ -281,6 +328,38 @@ export function getSelectionScript(): string {
         '</div>' +
         '<div class="description-content">' + escapeHtml(node.description) + '</div>' +
       '</div>';
+    }
+
+    /**
+     * Render config properties section for pipelet nodes
+     */
+    function renderConfigPropertiesSection(node) {
+      var configProps = node.configProperties;
+      if (!configProps || configProps.length === 0) {
+        return '';
+      }
+      
+      var html = '<div class="properties-section">' +
+        '<div class="properties-section-title">' +
+          iconSvgs.settings +
+          'Configuration (' + configProps.length + ')' +
+        '</div>' +
+        '<div class="attributes-grid">';
+      
+      for (var i = 0; i < configProps.length; i++) {
+        var prop = configProps[i];
+        var displayValue = prop.value !== undefined && prop.value !== null && prop.value !== "" 
+          ? escapeHtml(String(prop.value)) 
+          : '<span class="empty">empty</span>';
+        
+        html += '<div class="attribute-item">' +
+          '<div class="attribute-key">' + escapeHtml(prop.key) + '</div>' +
+          '<div class="attribute-value">' + displayValue + '</div>' +
+        '</div>';
+      }
+      
+      html += '</div></div>';
+      return html;
     }
 
     /**

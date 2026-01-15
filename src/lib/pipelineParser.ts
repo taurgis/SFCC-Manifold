@@ -1,5 +1,5 @@
 import { DOMParser } from "@xmldom/xmldom";
-import { BendPoint, ParsedPipeline, PipelineEdge, PipelineNode, PipelineNodeType, TransitionDisplay } from "./types";
+import { BendPoint, ConfigProperty, KeyBinding, ParsedPipeline, PipelineEdge, PipelineNode, PipelineNodeType, TransitionDisplay } from "./types";
 
 export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedPipeline {
   const doc = new DOMParser().parseFromString(xml, "text/xml");
@@ -130,7 +130,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
       : undefined;
 
     const id = `${branchPath}:${segmentIndex}:${nodeIndex}`;
-    const { type, label, attributes } = describeNode(typeEl);
+    const { type, label, attributes, configProperties, bindings } = describeNode(typeEl);
 
     const parsedNode: PipelineNode = {
       id,
@@ -138,6 +138,8 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
       type,
       branch: branchPath,
       attributes,
+      configProperties,
+      bindings,
       position,
     };
 
@@ -189,6 +191,8 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
     type: PipelineNodeType;
     label: string;
     attributes: Record<string, string | undefined>;
+    configProperties?: ConfigProperty[];
+    bindings?: KeyBinding[];
   } {
     if (!typeEl) {
       return { type: "unknown", label: "Unknown", attributes: {} };
@@ -207,7 +211,9 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
       }
       case "pipelet-node": {
         const pipeletName = attrs["pipelet-name"] || "Pipelet";
-        return { type: "pipelet", label: pipeletName, attributes: attrs };
+        const configProperties = collectConfigProperties(typeEl);
+        const bindings = collectKeyBindings(typeEl);
+        return { type: "pipelet", label: pipeletName, attributes: attrs, configProperties, bindings };
       }
       case "call-node": {
         const target = attrs["start-name-ref"] || "Call";
@@ -304,6 +310,52 @@ function collectAttributes(el: Element): Record<string, string | undefined> {
   }
 
   return result;
+}
+
+/**
+ * Collect config-property elements from a pipelet node
+ */
+function collectConfigProperties(el: Element): ConfigProperty[] {
+  const properties: ConfigProperty[] = [];
+
+  for (let i = 0; i < el.childNodes.length; i += 1) {
+    const node = el.childNodes.item(i);
+    if (node.nodeType === node.ELEMENT_NODE) {
+      const child = node as Element;
+      if (child.tagName === "config-property") {
+        const key = child.getAttribute("key");
+        const value = child.getAttribute("value");
+        if (key !== null) {
+          properties.push({ key, value: value ?? "" });
+        }
+      }
+    }
+  }
+
+  return properties;
+}
+
+/**
+ * Collect key-binding elements from a pipelet node
+ */
+function collectKeyBindings(el: Element): KeyBinding[] {
+  const bindings: KeyBinding[] = [];
+
+  for (let i = 0; i < el.childNodes.length; i += 1) {
+    const node = el.childNodes.item(i);
+    if (node.nodeType === node.ELEMENT_NODE) {
+      const child = node as Element;
+      if (child.tagName === "key-binding") {
+        const key = child.getAttribute("key");
+        const alias = child.getAttribute("alias");
+        if (key !== null) {
+          bindings.push({ key, alias: alias ?? "" });
+        }
+      }
+    }
+  }
+
+  return bindings;
 }
 
 function truncate(value: string, maxLength: number): string {

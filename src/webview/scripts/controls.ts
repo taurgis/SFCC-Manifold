@@ -28,8 +28,10 @@ export function getControlsScript(): string {
           y: (pointer.y - stage.y()) / oldScale
         };
 
+        // Use smaller scale factor for wheel/trackpad zooming
+        // Trackpads typically send many small deltaY values
         var direction = e.evt.deltaY > 0 ? -1 : 1;
-        var newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
+        var newScale = direction > 0 ? oldScale * wheelScaleBy : oldScale / wheelScaleBy;
         newScale = Math.max(minScale, Math.min(maxScale, newScale));
 
         stage.scale({ x: newScale, y: newScale });

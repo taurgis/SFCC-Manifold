@@ -8,6 +8,7 @@ import { icons } from "../icons";
 export function renderPropertiesPanel(): string {
   return `
     <aside class="properties-panel" id="propertiesPanel">
+      <div class="properties-resize-handle" id="propertiesResizeHandle"></div>
       ${renderPanelHeader()}
       <div class="properties-content" id="propertiesContent">
         ${renderEmptyState()}

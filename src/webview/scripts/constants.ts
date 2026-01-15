@@ -29,7 +29,8 @@ export const LAYOUT_CONFIG = {
 };
 
 export const ZOOM_CONFIG = {
-  scaleBy: 1.15,
+  scaleBy: 1.08,        // For button clicks
+  wheelScaleBy: 1.03,   // For wheel/trackpad (smaller for smoother zooming)
   minScale: 0.1,
   maxScale: 3,
 };
@@ -85,6 +86,7 @@ export function getConstantsScript(): string {
     var baseX = ${LAYOUT_CONFIG.baseX};
     var baseY = ${LAYOUT_CONFIG.baseY};
     var scaleBy = ${ZOOM_CONFIG.scaleBy};
+    var wheelScaleBy = ${ZOOM_CONFIG.wheelScaleBy};
     var minScale = ${ZOOM_CONFIG.minScale};
     var maxScale = ${ZOOM_CONFIG.maxScale};
 

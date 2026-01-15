@@ -20,6 +20,14 @@ export interface KeyBinding {
 }
 
 /**
+ * Represents a config property within a pipelet node
+ */
+export interface ConfigProperty {
+  key: string;
+  value: string;
+}
+
+/**
  * Represents a template configuration in interaction nodes
  */
 export interface TemplateConfig {
@@ -34,6 +42,8 @@ export interface PipelineNode {
   type: PipelineNodeType;
   branch: string;
   attributes: Record<string, string | undefined>;
+  /** Config properties for pipelet nodes (e.g., ScriptFile, Transactional) */
+  configProperties?: ConfigProperty[];
   /** Key bindings for pipelet nodes (input/output mappings) */
   bindings?: KeyBinding[];
   /** Template configuration for interaction nodes */
