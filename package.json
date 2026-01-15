@@ -11,6 +11,10 @@
     "Other"
   ],
   "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:xml",
+    "workspaceContains:**/pipelines/*.xml"
+  ],
   "contributes": {
     "commands": [
       {

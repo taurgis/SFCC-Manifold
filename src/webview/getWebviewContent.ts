@@ -257,7 +257,7 @@ export function getWebviewContent(
 
           var nodeWidth = 180;
           var nodeHeight = 100;
-          var horizontalGap = 220;
+          var horizontalGap = 380;
           var verticalGap = 130;
           var baseX = 40;
           var baseY = 40;
