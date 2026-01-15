@@ -25,12 +25,16 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
 
   return { name: pipelineName, group, type, description, nodes, edges };
 
-  function parseBranchWithEntry(branchEl: Element, branchPath: string): { entryIds: string[] } {
+  function parseBranchWithEntry(
+    branchEl: Element,
+    branchPath: string,
+    parentLoopNodeId?: string
+  ): { entryIds: string[] } {
     const entryIds: string[] = [];
     let segmentIndex = 0;
 
     for (const segmentEl of getElementChildren(branchEl, "segment")) {
-      const result = parseSegment(segmentEl, branchPath, segmentIndex++);
+      const result = parseSegment(segmentEl, branchPath, segmentIndex++, parentLoopNodeId);
       if (result.firstNodeId) {
         entryIds.push(result.firstNodeId);
       }
@@ -39,7 +43,12 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
     return { entryIds };
   }
 
-  function parseSegment(segmentEl: Element, branchPath: string, segmentIndex: number) {
+  function parseSegment(
+    segmentEl: Element,
+    branchPath: string,
+    segmentIndex: number,
+    parentLoopNodeId?: string
+  ) {
     let lastNodeId: string | undefined;
     let firstNodeId: string | undefined;
     let pendingLabel: string | undefined;
@@ -60,7 +69,17 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
         lastNodeId = parsed.id;
         pendingLabel = undefined;
       } else if (child.tagName === "simple-transition" || child.tagName === "transition") {
-        pendingLabel = deriveTransitionLabel(child);
+        const label = deriveTransitionLabel(child);
+        const targetConnector = child.getAttribute("target-connector");
+        const targetPath = child.getAttribute("target-path");
+
+        // Check if this is a loop back-edge (transition back to parent loop node)
+        if (targetConnector === "loop" && targetPath && parentLoopNodeId && lastNodeId) {
+          edges.push({ from: lastNodeId, to: parentLoopNodeId, label: "loop" });
+          pendingLabel = undefined;
+        } else {
+          pendingLabel = label;
+        }
       }
     }
 
@@ -94,6 +113,9 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
 
     nodes.push(parsedNode);
 
+    // Determine if this is a loop node (for back-edge tracking)
+    const isLoopNode = type === "loop";
+
     for (const nestedBranch of getElementChildren(nodeEl, "branch")) {
       const connectorLabel =
         nestedBranch.getAttribute("source-connector") ||
@@ -102,7 +124,13 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
         "branch";
 
       const nestedPath = `${branchPath}/${nestedBranch.getAttribute("basename") || connectorLabel}`;
-      const branchResult = parseBranchWithEntry(nestedBranch, nestedPath);
+      
+      // Pass loop node ID if this is a loop node, so back-edges can reference it
+      const branchResult = parseBranchWithEntry(
+        nestedBranch,
+        nestedPath,
+        isLoopNode ? id : undefined
+      );
 
       for (const entry of branchResult.entryIds) {
         edges.push({ from: id, to: entry, label: connectorLabel });

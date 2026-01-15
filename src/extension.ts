@@ -5,7 +5,11 @@ import { getWebviewContent } from "./webview/getWebviewContent";
 /** Track open panels by file path to avoid duplicates */
 const openPanels = new Map<string, vscode.WebviewPanel>();
 
+/** Store extension URI for use in refresh */
+let extensionUri: vscode.Uri;
+
 export function activate(context: vscode.ExtensionContext) {
+  extensionUri = context.extensionUri;
   const disposable = vscode.commands.registerCommand("sfccPipelineVisualizer.open", async (uri?: vscode.Uri) => {
     await openPipelineVisualiser(context, uri);
   });
@@ -123,10 +127,16 @@ async function openPipelineVisualiser(context: vscode.ExtensionContext, resource
     {
       enableScripts: true,
       retainContextWhenHidden: true,
+      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "node_modules")],
     }
   );
 
-  panel.webview.html = getWebviewContent(panel.webview, parsed, targetUri);
+  panel.webview.html = getWebviewContent({
+    webview: panel.webview,
+    pipeline: parsed,
+    sourceUri: targetUri,
+    extensionUri: context.extensionUri,
+  });
 
   // Track the panel
   openPanels.set(targetUri.fsPath, panel);
@@ -156,7 +166,12 @@ async function refreshPanelContent(panel: vscode.WebviewPanel, uri: vscode.Uri):
     return; // Silently fail on parse errors during refresh
   }
 
-  panel.webview.html = getWebviewContent(panel.webview, parsed, uri);
+  panel.webview.html = getWebviewContent({
+    webview: panel.webview,
+    pipeline: parsed,
+    sourceUri: uri,
+    extensionUri,
+  });
 }
 
 function guessActivePipeline(): vscode.Uri | undefined {
