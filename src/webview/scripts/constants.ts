@@ -19,9 +19,11 @@ export const NODE_COLORS: Record<string, string> = {
 
 export const LAYOUT_CONFIG = {
   nodeWidth: 180,
-  nodeHeight: 100,
-  horizontalGap: 380,
-  verticalGap: 130,
+  nodeHeight: 80,
+  // Grid cell size - nodes are positioned on a grid like the legacy editor
+  // These values represent the spacing between grid cells
+  horizontalGap: 220,  // Width of a grid cell (node width + padding)
+  verticalGap: 110,    // Height of a grid cell (node height + padding)
   baseX: 60,
   baseY: 60,
 };

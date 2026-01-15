@@ -1,79 +1,105 @@
 /**
  * Node layout calculation script (embedded JavaScript)
+ * 
+ * This module implements layout logic that mirrors the SFCC pipeline editor.
+ * Key insights from the XML format:
+ * 
+ * 1. The `node-display` element contains x, y coordinates in GRID units (not pixels)
+ * 2. Start nodes and first nodes in top-level branches use ABSOLUTE grid positions
+ * 3. Subsequent nodes within a segment use RELATIVE positions from the previous node
+ * 4. Nested branch nodes use RELATIVE positions from the parent (branch-off) node
+ * 5. The `orientation="horizontal"` attribute indicates a node flowing horizontally
+ * 
+ * Grid coordinate system:
+ * - x=0 means same column as previous node
+ * - x=1 means one column to the right
+ * - x=-1 means one column to the left
+ * - y=0 means same row as previous node  
+ * - y=1 means one row below
+ * - y=-1 means one row above
  */
 
 export function getLayoutScript(): string {
   return `
     /**
-     * Calculate node positions using improved hierarchical layout
-     * This algorithm:
-     * 1. Groups nodes by their full branch path
-     * 2. Builds a tree structure of branches
-     * 3. Assigns X positions based on branch tree structure
-     * 4. Places nodes vertically, avoiding overlaps with a grid
+     * Calculate node positions using XML grid coordinates
+     * This faithfully reproduces the legacy SFCC pipeline editor positioning.
      */
     function calculateLayout(nodes) {
       var placedNodes = [];
       
       try {
-        // Build branch tree and collect metadata
-        var branchData = buildBranchTree(nodes);
+        // Track absolute grid positions for each node
+        var nodeGridPositions = {}; // nodeId -> {gridX, gridY}
+        var occupiedCells = {}; // "gridX,gridY" -> true
         
-        // Assign X positions to branches using tree traversal
-        assignBranchPositions(branchData);
+        // First pass: identify top-level branches (those without '/' in the path)
+        var topLevelBranches = {};
+        for (var i = 0; i < nodes.length; i++) {
+          var branch = nodes[i].branch;
+          if (branch.indexOf('/') === -1) {
+            topLevelBranches[branch] = true;
+          }
+        }
         
-        // Track occupied grid cells (column, row) -> true
-        var occupiedCells = {};
-        
-        // Place each node
+        // Process all nodes
         for (var i = 0; i < nodes.length; i++) {
           var node = nodes[i];
-          var branchInfo = branchData.branches[node.branch];
-          var col = branchInfo ? branchInfo.column : 0;
+          var pos = node.position;
           
-          // Get starting row from parent branch's current position
-          var startRow = 0;
-          var parts = node.branch.split('/');
-          if (parts.length > 1) {
-            var parentBranch = parts.slice(0, -1).join('/');
-            var parentInfo = branchData.branches[parentBranch];
-            if (parentInfo && parentInfo.currentRow !== undefined) {
-              startRow = parentInfo.currentRow;
+          // Determine the absolute grid position
+          var gridX, gridY;
+          
+          // Parse the node ID to understand its position in the segment
+          // Format: "branchPath:segmentIndex:nodeIndex"
+          var idParts = node.id.split(':');
+          var branchPath = idParts[0];
+          var segmentIndex = parseInt(idParts[1], 10);
+          var nodeIndexInSegment = parseInt(idParts[2], 10);
+          
+          // Check if this is the first node in its branch (ever)
+          var isFirstInBranch = isFirstNodeInBranch(node.id, nodes, i);
+          var isTopLevelBranch = topLevelBranches[node.branch];
+          var isNestedBranch = !isTopLevelBranch;
+          
+          // Get XML position values (default to 0)
+          var xmlX = (pos && pos.x !== undefined) ? pos.x : 0;
+          var xmlY = (pos && pos.y !== undefined) ? pos.y : 1;
+          
+          if (isFirstInBranch && isTopLevelBranch) {
+            // First node in a top-level branch: use ABSOLUTE positioning
+            gridX = xmlX;
+            gridY = xmlY;
+          } else if (isFirstInBranch && isNestedBranch) {
+            // First node in a nested branch: RELATIVE to parent branch node
+            var parentPos = findParentNodePosition(node, nodeGridPositions, nodes, i);
+            if (parentPos) {
+              gridX = parentPos.gridX + xmlX;
+              gridY = parentPos.gridY + xmlY;
+            } else {
+              // Fallback: use absolute positioning
+              gridX = xmlX;
+              gridY = xmlY;
+            }
+          } else {
+            // Subsequent node in any branch: RELATIVE to previous node in same branch
+            var prevPos = findPreviousNodePosition(node, nodeGridPositions, nodes, i);
+            if (prevPos) {
+              gridX = prevPos.gridX + xmlX;
+              gridY = prevPos.gridY + xmlY;
+            } else {
+              // Fallback: use absolute positioning
+              gridX = xmlX;
+              gridY = xmlY;
             }
           }
           
-          // Find the next available row at this column
-          var row = branchInfo && branchInfo.currentRow !== undefined ? branchInfo.currentRow : startRow;
-          var cellKey = col + ',' + row;
-          var attempts = 0;
+          // Store the computed position
+          nodeGridPositions[node.id] = { gridX: gridX, gridY: gridY };
           
-          while (occupiedCells[cellKey] && attempts < 100) {
-            row++;
-            cellKey = col + ',' + row;
-            attempts++;
-          }
-          
-          // Mark cell as occupied
+          // Mark cell as occupied (for debugging, not used for collision avoidance here)
+          var cellKey = gridX + ',' + gridY;
           occupiedCells[cellKey] = true;
-          
-          // Update branch's current row for next node
-          if (branchInfo) {
-            branchInfo.currentRow = row + 1;
-          }
-          
-          // Propagate row position up to parent branches
-          for (var j = parts.length - 1; j >= 1; j--) {
-            var ancestorBranch = parts.slice(0, j).join('/');
-            var ancestorInfo = branchData.branches[ancestorBranch];
-            if (ancestorInfo) {
-              if (ancestorInfo.currentRow === undefined || ancestorInfo.currentRow <= row) {
-                ancestorInfo.currentRow = row + 1;
-              }
-            }
-          }
-          
-          var x = baseX + (col * horizontalGap);
-          var y = baseY + (row * verticalGap);
           
           placedNodes.push({
             id: node.id,
@@ -84,10 +110,29 @@ export function getLayoutScript(): string {
             bindings: node.bindings || [],
             template: node.template || null,
             description: node.description || null,
-            x: x,
-            y: y
+            orientation: (pos ? pos.orientation : null),
+            gridX: gridX,
+            gridY: gridY
           });
         }
+        
+        // Find minimum grid coordinates (some may be negative due to relative positioning)
+        var minGridX = 0, minGridY = 0;
+        for (var i = 0; i < placedNodes.length; i++) {
+          if (placedNodes[i].gridX < minGridX) minGridX = placedNodes[i].gridX;
+          if (placedNodes[i].gridY < minGridY) minGridY = placedNodes[i].gridY;
+        }
+        
+        // Convert grid coordinates to pixel coordinates, normalizing to ensure all positions are positive
+        for (var i = 0; i < placedNodes.length; i++) {
+          var n = placedNodes[i];
+          n.x = baseX + ((n.gridX - minGridX) * horizontalGap);
+          n.y = baseY + ((n.gridY - minGridY) * verticalGap);
+          // Clean up temporary properties
+          delete n.gridX;
+          delete n.gridY;
+        }
+        
       } catch (e) {
         console.error("Layout error:", e);
         // Fallback to simple grid layout
@@ -111,130 +156,68 @@ export function getLayoutScript(): string {
       
       return placedNodes;
     }
-
+    
     /**
-     * Build a tree structure from branch paths
+     * Check if this is the first node encountered in its branch
      */
-    function buildBranchTree(nodes) {
-      var branches = {};
-      var topLevel = [];
+    function isFirstNodeInBranch(nodeId, allNodes, currentIndex) {
+      var parts = nodeId.split(':');
+      var branchPath = parts[0];
       
-      // First pass: collect all branches
-      for (var i = 0; i < nodes.length; i++) {
-        var branch = nodes[i].branch;
-        if (!branches[branch]) {
-          branches[branch] = {
-            path: branch,
-            depth: branch.split('/').length - 1,
-            children: [],
-            nodeCount: 0,
-            column: 0,
-            currentRow: 0
-          };
+      for (var i = 0; i < currentIndex; i++) {
+        var otherParts = allNodes[i].id.split(':');
+        if (otherParts[0] === branchPath) {
+          return false;
         }
-        branches[branch].nodeCount++;
+      }
+      return true;
+    }
+    
+    /**
+     * Find the position of the parent branch's node (the one that spawned this branch)
+     */
+    function findParentNodePosition(node, nodeGridPositions, allNodes, currentIndex) {
+      var branchParts = node.branch.split('/');
+      if (branchParts.length < 2) return null;
+      
+      var parentBranch = branchParts.slice(0, -1).join('/');
+      
+      // Look backwards for the most recent node in the parent branch
+      for (var i = currentIndex - 1; i >= 0; i--) {
+        var otherNode = allNodes[i];
+        if (otherNode.branch === parentBranch) {
+          var pos = nodeGridPositions[otherNode.id];
+          if (pos) return pos;
+        }
       }
       
-      // Second pass: build parent-child relationships
-      for (var branch in branches) {
-        var parts = branch.split('/');
-        if (parts.length === 1) {
-          // Top-level branch
-          if (topLevel.indexOf(branch) === -1) {
-            topLevel.push(branch);
-          }
-        } else {
-          // Has a parent
-          var parentPath = parts.slice(0, -1).join('/');
-          
-          // Ensure parent exists in our map
-          if (!branches[parentPath]) {
-            branches[parentPath] = {
-              path: parentPath,
-              depth: parentPath.split('/').length - 1,
-              children: [],
-              nodeCount: 0,
-              column: 0,
-              currentRow: 0
-            };
-            
-            // Check if this parent is top-level
-            if (parentPath.indexOf('/') === -1 && topLevel.indexOf(parentPath) === -1) {
-              topLevel.push(parentPath);
-            }
-          }
-          
-          // Add as child if not already
-          if (branches[parentPath].children.indexOf(branch) === -1) {
-            branches[parentPath].children.push(branch);
+      // Try grandparent branch
+      if (branchParts.length > 2) {
+        var grandparentBranch = branchParts.slice(0, -2).join('/');
+        for (var i = currentIndex - 1; i >= 0; i--) {
+          var otherNode = allNodes[i];
+          if (otherNode.branch === grandparentBranch) {
+            var pos = nodeGridPositions[otherNode.id];
+            if (pos) return pos;
           }
         }
       }
       
-      // Sort children for consistent ordering
-      for (var branch in branches) {
-        branches[branch].children.sort();
-      }
-      
-      return {
-        branches: branches,
-        topLevel: topLevel
-      };
+      return null;
     }
-
+    
     /**
-     * Assign column positions to branches using DFS traversal
+     * Find the position of the previous node in the same branch
      */
-    function assignBranchPositions(branchData) {
-      var nextColumn = 0;
-      var branches = branchData.branches;
-      var topLevel = branchData.topLevel;
-      
-      // Sort top-level branches
-      topLevel.sort();
-      
-      // Process each top-level branch and its descendants
-      for (var i = 0; i < topLevel.length; i++) {
-        var usedColumns = assignColumnsRecursive(branches, topLevel[i], nextColumn);
-        nextColumn = usedColumns.max + 1;
+    function findPreviousNodePosition(node, nodeGridPositions, allNodes, currentIndex) {
+      // Look for the most recent node in the same branch
+      for (var i = currentIndex - 1; i >= 0; i--) {
+        if (allNodes[i].branch === node.branch) {
+          var pos = nodeGridPositions[allNodes[i].id];
+          if (pos) return pos;
+        }
       }
-    }
-
-    /**
-     * Recursively assign columns, returns {min, max} columns used
-     */
-    function assignColumnsRecursive(branches, branchPath, startColumn) {
-      var branch = branches[branchPath];
-      if (!branch) {
-        return { min: startColumn, max: startColumn };
-      }
-      
-      var children = branch.children;
-      
-      if (children.length === 0) {
-        // Leaf branch - assign single column
-        branch.column = startColumn;
-        return { min: startColumn, max: startColumn };
-      }
-      
-      // Has children - assign columns to children first
-      var childRanges = [];
-      var currentCol = startColumn;
-      
-      for (var i = 0; i < children.length; i++) {
-        var childRange = assignColumnsRecursive(branches, children[i], currentCol);
-        childRanges.push(childRange);
-        currentCol = childRange.max + 1;
-      }
-      
-      // Place this branch in the center of its children
-      var minCol = childRanges[0].min;
-      var maxCol = childRanges[childRanges.length - 1].max;
-      var centerCol = Math.floor((minCol + maxCol) / 2);
-      
-      branch.column = centerCol;
-      
-      return { min: minCol, max: maxCol };
+      return null;
     }
 
     /**
