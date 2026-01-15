@@ -358,6 +358,19 @@ export function getCanvasScript(): string {
       }
 
       function getAnchor(node, side, offset) {
+        // Special handling for join nodes which are rendered as circles
+        if (node.type === "join") {
+          var circleRadius = 15;
+          var cx = node.x + nodeWidth / 2;
+          var cy = node.y + nodeHeight / 2;
+          
+          if (side === "top") return { x: cx + offset, y: cy - circleRadius };
+          if (side === "bottom") return { x: cx + offset, y: cy + circleRadius };
+          if (side === "left") return { x: cx - circleRadius, y: cy + offset };
+          return { x: cx + circleRadius, y: cy + offset }; // right
+        }
+        
+        // Standard rectangular node anchors
         if (side === "top") return { x: node.x + nodeWidth / 2 + offset, y: node.y };
         if (side === "bottom") return { x: node.x + nodeWidth / 2 + offset, y: node.y + nodeHeight };
         if (side === "left") return { x: node.x, y: node.y + nodeHeight / 2 + offset };
@@ -393,18 +406,160 @@ export function getCanvasScript(): string {
       }
 
       /**
-       * Build path through waypoints
-       * Creates orthogonal (right-angle) paths connecting start → waypoints → end
-       * Uses startOffset and endOffset to prevent overlapping parallel lines
+       * Check if a point is inside a node's bounding box (with padding)
        */
-      function buildOrthogonalPath(start, end, bendPoints, fromNode, toNode, outSide, inSide, startOffset, endOffset) {
+      function isPointInsideNode(px, py, node, padding) {
+        padding = padding || 10;
+        return px >= node.x - padding && 
+               px <= node.x + nodeWidth + padding &&
+               py >= node.y - padding && 
+               py <= node.y + nodeHeight + padding;
+      }
+
+      /**
+       * Check if a line segment intersects with a node's bounding box
+       */
+      function lineIntersectsNode(x1, y1, x2, y2, node, padding) {
+        padding = padding || 10;
+        var left = node.x - padding;
+        var right = node.x + nodeWidth + padding;
+        var top = node.y - padding;
+        var bottom = node.y + nodeHeight + padding;
+        
+        // Check if line is completely outside the box
+        if ((x1 < left && x2 < left) || (x1 > right && x2 > right)) return false;
+        if ((y1 < top && y2 < top) || (y1 > bottom && y2 > bottom)) return false;
+        
+        // Check if either endpoint is inside
+        if (isPointInsideNode(x1, y1, node, padding) || isPointInsideNode(x2, y2, node, padding)) return true;
+        
+        // Check line intersection with each side
+        var minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+        var minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+        
+        // Horizontal line
+        if (Math.abs(y2 - y1) < 1) {
+          return y1 >= top && y1 <= bottom && minX <= right && maxX >= left;
+        }
+        // Vertical line
+        if (Math.abs(x2 - x1) < 1) {
+          return x1 >= left && x1 <= right && minY <= bottom && maxY >= top;
+        }
+        
+        // Diagonal line - check intersection with box sides
+        var m = (y2 - y1) / (x2 - x1);
+        var b = y1 - m * x1;
+        
+        // Check left and right edges
+        var yAtLeft = m * left + b;
+        var yAtRight = m * right + b;
+        if ((yAtLeft >= top && yAtLeft <= bottom && left >= minX && left <= maxX) ||
+            (yAtRight >= top && yAtRight <= bottom && right >= minX && right <= maxX)) return true;
+        
+        // Check top and bottom edges
+        var xAtTop = (top - b) / m;
+        var xAtBottom = (bottom - b) / m;
+        if ((xAtTop >= left && xAtTop <= right && top >= minY && top <= maxY) ||
+            (xAtBottom >= left && xAtBottom <= right && bottom >= minY && bottom <= maxY)) return true;
+        
+        return false;
+      }
+
+      /**
+       * Get all nodes that an edge path might intersect with (excluding source and target)
+       */
+      function getBlockingNodes(fromNode, toNode, allNodes) {
+        var blocking = [];
+        for (var id in allNodes) {
+          if (id === fromNode.id || id === toNode.id) continue;
+          blocking.push(allNodes[id]);
+        }
+        return blocking;
+      }
+
+      /**
+       * Find the clearance needed to route around blocking nodes
+       */
+      function findClearance(start, end, blockingNodes, direction, side) {
+        var clearance = 0;
+        var padding = 20;
+        
+        for (var i = 0; i < blockingNodes.length; i++) {
+          var node = blockingNodes[i];
+          
+          if (direction === "horizontal") {
+            // Check if node is in the horizontal path
+            var minY = Math.min(start.y, end.y) - padding;
+            var maxY = Math.max(start.y, end.y) + padding;
+            var nodeTop = node.y - padding;
+            var nodeBottom = node.y + nodeHeight + padding;
+            
+            if (!(nodeBottom < minY || nodeTop > maxY)) {
+              // Node is in vertical range, check horizontal overlap
+              if (side === "right") {
+                var nodeRight = node.x + nodeWidth + padding;
+                if (nodeRight > clearance && nodeRight > start.x) {
+                  clearance = nodeRight;
+                }
+              } else {
+                var nodeLeft = node.x - padding;
+                if (clearance === 0 || nodeLeft < clearance) {
+                  if (nodeLeft < start.x) {
+                    clearance = nodeLeft;
+                  }
+                }
+              }
+            }
+          } else {
+            // Vertical direction
+            var minX = Math.min(start.x, end.x) - padding;
+            var maxX = Math.max(start.x, end.x) + padding;
+            var nodeLeft = node.x - padding;
+            var nodeRight = node.x + nodeWidth + padding;
+            
+            if (!(nodeRight < minX || nodeLeft > maxX)) {
+              // Node is in horizontal range, check vertical overlap
+              if (side === "bottom") {
+                var nodeBottom = node.y + nodeHeight + padding;
+                if (nodeBottom > clearance && nodeBottom > start.y) {
+                  clearance = nodeBottom;
+                }
+              } else {
+                var nodeTop = node.y - padding;
+                if (clearance === 0 || nodeTop < clearance) {
+                  if (nodeTop < start.y) {
+                    clearance = nodeTop;
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        return clearance;
+      }
+
+      /**
+       * Build path through waypoints with node avoidance
+       * Creates orthogonal (right-angle) paths connecting start → waypoints → end
+       * Routes around other nodes to prevent overlapping
+       */
+      function buildOrthogonalPath(start, end, bendPoints, fromNode, toNode, outSide, inSide, startOffset, endOffset, blockingNodes, edgeIndex) {
+        edgeIndex = edgeIndex || 0;
         var points = [start.x, start.y];
+        
+        // Debug: log all edge routing
+        console.log("buildOrthogonalPath:", fromNode.id, "→", toNode.id, "outSide:", outSide, "inSide:", inSide, "hasBendPoints:", !!(bendPoints && bendPoints.length));
         
         // Use offsets for routing to prevent overlap
         startOffset = startOffset || 0;
         endOffset = endOffset || 0;
+        blockingNodes = blockingNodes || [];
+        
+        var padding = 25; // Clearance around nodes
         
         if (bendPoints && bendPoints.length > 0) {
+          console.log("  Using BEND POINTS path");
           // Convert bend points to waypoints
           var waypoints = [];
           for (var i = 0; i < bendPoints.length; i++) {
@@ -470,49 +625,164 @@ export function getCanvasScript(): string {
             }
           }
         } else {
-          // No bend points - use smart routing based on sides
+          // No bend points - use smart routing based on sides with node avoidance
           var dx = end.x - start.x;
           var dy = end.y - start.y;
           
           if (outSide === "bottom" && inSide === "top") {
             // Standard downward flow
             if (Math.abs(dx) > 5) {
-              // Use offset for the horizontal segment to prevent overlap
+              // Check if direct path would cross any nodes
               var midY = (start.y + end.y) / 2;
-              var routeX = start.x + startOffset;
-              points.push(routeX, midY);
-              points.push(end.x + endOffset, midY);
+              var needsDetour = false;
+              
+              for (var i = 0; i < blockingNodes.length; i++) {
+                var bn = blockingNodes[i];
+                // Check if node is between start and end vertically
+                if (bn.y + nodeHeight > start.y && bn.y < end.y) {
+                  // Check if our horizontal path would cross this node
+                  var minX = Math.min(start.x, end.x) - padding;
+                  var maxX = Math.max(start.x, end.x) + padding;
+                  if (bn.x < maxX && bn.x + nodeWidth > minX) {
+                    needsDetour = true;
+                    break;
+                  }
+                }
+              }
+              
+              if (needsDetour) {
+                // Route around - go further right or left
+                var routeX = dx > 0 ? 
+                  Math.max(start.x, end.x) + nodeWidth / 2 + padding :
+                  Math.min(start.x, end.x) - nodeWidth / 2 - padding;
+                points.push(start.x, start.y + padding);
+                points.push(routeX, start.y + padding);
+                points.push(routeX, end.y - padding);
+                points.push(end.x, end.y - padding);
+              } else {
+                var routeX = start.x + startOffset;
+                points.push(routeX, midY);
+                points.push(end.x + endOffset, midY);
+              }
             }
-            // If aligned, the offset is already in start.x and end.x
           } else if (outSide === "right" && inSide === "top") {
-            // Decision YES or error going to node below
-            // Go RIGHT first to clear the source node, then DOWN, then LEFT to target
-            // Route OUTSIDE other blocks by going far enough right
-            var clearanceX = start.x + nodeWidth / 2 + 30 + Math.abs(startOffset) * 2;
-            // If target is to the left, we need to go even further right to clear
-            if (dx < 0) {
-              clearanceX = start.x + nodeWidth / 2 + 50;
+            // Exiting right, entering top - need to go around nodes below
+            var routeX = start.x + nodeWidth / 2 + padding;
+            
+            // Find how far right we need to go to clear blocking nodes
+            for (var i = 0; i < blockingNodes.length; i++) {
+              var bn = blockingNodes[i];
+              // Check if node is between source exit and target entry
+              if (bn.y >= start.y - padding && bn.y <= end.y + padding) {
+                var nodeRight = bn.x + nodeWidth + padding;
+                if (nodeRight > routeX && bn.x < end.x + nodeWidth) {
+                  routeX = nodeRight;
+                }
+              }
             }
-            points.push(clearanceX, start.y);
-            points.push(clearanceX, end.y);
+            
+            routeX = Math.max(routeX, start.x + padding);
+            points.push(routeX, start.y);
+            points.push(routeX, end.y - padding);
+            points.push(end.x, end.y - padding);
+          } else if (outSide === "right" && inSide === "right") {
+            // Exiting right, entering right - loop around to the right side
+            // Start to the right of both source and target, then go down/up to target
+            var routeX = Math.max(start.x, end.x) + padding;
+            
+            // For join nodes (circles), end.x is already at the circle edge
+            // For regular nodes, we need to go past the right edge
+            if (toNode.type !== "join") {
+              routeX = Math.max(routeX, end.x + padding);
+            }
+            
+            // Find clearance - ensure we go far enough right to clear all blocking nodes
+            for (var i = 0; i < blockingNodes.length; i++) {
+              var bn = blockingNodes[i];
+              var minY = Math.min(start.y, end.y) - padding;
+              var maxY = Math.max(start.y, end.y) + padding;
+              if (bn.y + nodeHeight > minY && bn.y < maxY) {
+                var nodeRight = bn.x + nodeWidth + padding;
+                if (nodeRight > routeX) {
+                  routeX = nodeRight;
+                }
+              }
+            }
+            
+            points.push(routeX, start.y);
+            points.push(routeX, end.y);
           } else if (outSide === "left" && inSide === "top") {
             // Decision NO going to node below
-            // Go LEFT first to clear, then DOWN, then RIGHT to target
-            var clearanceX = start.x - nodeWidth / 2 - 30 - Math.abs(startOffset) * 2;
-            // If target is to the right, need to go further left
-            if (dx > 0) {
-              clearanceX = start.x - nodeWidth / 2 - 50;
+            var routeX = start.x - nodeWidth / 2 - padding;
+            
+            // Find how far left we need to go to clear blocking nodes
+            for (var i = 0; i < blockingNodes.length; i++) {
+              var bn = blockingNodes[i];
+              if (bn.y >= start.y - padding && bn.y <= end.y + padding) {
+                var nodeLeft = bn.x - padding;
+                if (nodeLeft < routeX && bn.x + nodeWidth > end.x - nodeWidth) {
+                  routeX = nodeLeft;
+                }
+              }
             }
-            points.push(clearanceX, start.y);
-            points.push(clearanceX, end.y);
+            
+            routeX = Math.min(routeX, start.x - padding);
+            points.push(routeX, start.y);
+            points.push(routeX, end.y - padding);
+            points.push(end.x, end.y - padding);
+          } else if (outSide === "left" && inSide === "left") {
+            // Exiting left, entering left
+            var routeX = Math.min(start.x, end.x) - nodeWidth / 2 - padding;
+            
+            for (var i = 0; i < blockingNodes.length; i++) {
+              var bn = blockingNodes[i];
+              var minY = Math.min(start.y, end.y) - padding;
+              var maxY = Math.max(start.y, end.y) + padding;
+              if (bn.y + nodeHeight > minY && bn.y < maxY) {
+                var nodeLeft = bn.x - padding;
+                if (nodeLeft < routeX) {
+                  routeX = nodeLeft;
+                }
+              }
+            }
+            
+            points.push(routeX, start.y);
+            points.push(routeX, end.y);
           } else if (outSide === "right" && inSide === "left") {
-            // Horizontal connection
+            // Horizontal connection right to left
             if (Math.abs(dy) > 10) {
               var midX = (start.x + end.x) / 2;
-              var routeY = start.y + startOffset;
-              points.push(midX, routeY);
-              points.push(midX, end.y + endOffset);
+              
+              // Check for blocking nodes
+              var needsDetour = false;
+              for (var i = 0; i < blockingNodes.length; i++) {
+                var bn = blockingNodes[i];
+                var minY = Math.min(start.y, end.y) - padding;
+                var maxY = Math.max(start.y, end.y) + padding;
+                if (bn.y + nodeHeight > minY && bn.y < maxY) {
+                  if (bn.x < midX + padding && bn.x + nodeWidth > midX - padding) {
+                    needsDetour = true;
+                    break;
+                  }
+                }
+              }
+              
+              if (needsDetour) {
+                // Route above or below blocking nodes
+                var routeY = dy > 0 ? 
+                  Math.min(start.y, end.y) - padding :
+                  Math.max(start.y, end.y) + nodeHeight + padding;
+                points.push(start.x + padding, start.y);
+                points.push(start.x + padding, routeY);
+                points.push(end.x - padding, routeY);
+                points.push(end.x - padding, end.y);
+              } else {
+                var routeY = start.y + startOffset;
+                points.push(midX, routeY);
+                points.push(midX, end.y + endOffset);
+              }
             }
+            // For nearly horizontal (dy close to 0), just draw straight line - no intermediate points needed
           } else if (outSide === "left" && inSide === "right") {
             if (Math.abs(dy) > 10) {
               var midX = (start.x + end.x) / 2;
@@ -521,13 +791,92 @@ export function getCanvasScript(): string {
               points.push(midX, end.y + endOffset);
             }
           } else if (outSide === "bottom" && inSide === "left") {
-            // Go down then right - use offset on vertical segment
+            // Go down then right
             var routeX = start.x + startOffset;
-            points.push(routeX, end.y);
+            var routeY = end.y;
+            
+            // Check if we need to route around nodes
+            for (var i = 0; i < blockingNodes.length; i++) {
+              var bn = blockingNodes[i];
+              if (bn.y > start.y && bn.y < end.y + nodeHeight) {
+                if (bn.x < start.x + padding && bn.x + nodeWidth > start.x - padding) {
+                  routeX = bn.x - padding;
+                }
+              }
+            }
+            
+            points.push(routeX, routeY);
           } else if (outSide === "bottom" && inSide === "right") {
-            // Go down then left - use offset on vertical segment
-            var routeX = start.x + startOffset;
-            points.push(routeX, end.y);
+            // Go down then curve to enter from right
+            // Need to route around any blocking nodes
+            
+            console.log("BOTTOM->RIGHT routing debug:");
+            console.log("  start:", start.x, start.y, "end:", end.x, end.y);
+            console.log("  fromNode:", fromNode.id, "toNode:", toNode.id);
+            console.log("  blockingNodes count:", blockingNodes.length);
+            
+            // Start with minimum route X - right side of target plus padding
+            var routeX = end.x + nodeWidth + padding;
+            
+            // Check if there's a node directly below us that we'd hit going straight down
+            var nodeDirectlyBelow = false;
+            for (var i = 0; i < blockingNodes.length; i++) {
+              var bn = blockingNodes[i];
+              console.log("  Checking node:", bn.id, "x:", bn.x, "y:", bn.y, "w:", nodeWidth, "h:", nodeHeight);
+              console.log("    bn.y > start.y:", bn.y, ">", start.y, "=", bn.y > start.y);
+              console.log("    bn.y < end.y + nodeHeight:", bn.y, "<", end.y + nodeHeight, "=", bn.y < end.y + nodeHeight);
+              // Node is below our start point and above or at target level
+              if (bn.y > start.y && bn.y < end.y + nodeHeight) {
+                // Check if going straight down from our bottom center would hit this node
+                // Use wider detection - node overlaps with our x position at all
+                console.log("    In vertical range. Checking horizontal:");
+                console.log("    start.x >= bn.x - padding:", start.x, ">=", bn.x - padding, "=", start.x >= bn.x - padding);
+                console.log("    start.x <= bn.x + nodeWidth + padding:", start.x, "<=", bn.x + nodeWidth + padding, "=", start.x <= bn.x + nodeWidth + padding);
+                if (start.x >= bn.x - padding && start.x <= bn.x + nodeWidth + padding) {
+                  nodeDirectlyBelow = true;
+                  console.log("    NODE DIRECTLY BELOW DETECTED:", bn.id);
+                  // We need to go right of this node
+                  routeX = Math.max(routeX, bn.x + nodeWidth + padding);
+                }
+              }
+            }
+            
+            console.log("  nodeDirectlyBelow:", nodeDirectlyBelow, "routeX:", routeX);
+            
+            // Also find max right extent of any node we'd need to clear
+            for (var i = 0; i < blockingNodes.length; i++) {
+              var bn = blockingNodes[i];
+              // Check if node is in our path (between start and target vertically)
+              if (bn.y + nodeHeight > start.y && bn.y < end.y + nodeHeight) {
+                var nodeRight = bn.x + nodeWidth + padding;
+                // If this node's right edge would block our vertical path
+                if (bn.x <= routeX && nodeRight > end.x) {
+                  routeX = Math.max(routeX, nodeRight);
+                }
+              }
+            }
+            
+            // Add extra spacing for parallel lines (multiple edges to same target)
+            routeX = routeX + (edgeIndex * 15);
+            
+            console.log("  Final routeX:", routeX, "edgeIndex:", edgeIndex);
+            
+            if (nodeDirectlyBelow) {
+              // Need to go right first to avoid node below
+              // Path: right, then down, then to target
+              var clearanceX = routeX;
+              console.log("  Routing: right first to", clearanceX, "then down to", end.y);
+              points.push(clearanceX, start.y);  // Go right from bottom of source
+              points.push(clearanceX, end.y);    // Go down to target Y
+            } else {
+              // Can go down first, then right
+              // Path: go down a bit, then right to clear nodes, then down to target Y
+              var initialDropY = start.y + padding;
+              console.log("  Routing: down first to", initialDropY, "then right to", routeX);
+              points.push(start.x, initialDropY);
+              points.push(routeX, initialDropY);
+              points.push(routeX, end.y);
+            }
           } else if (outSide === "top" && inSide === "bottom") {
             // Going upward
             if (Math.abs(dx) > 5) {
@@ -550,7 +899,55 @@ export function getCanvasScript(): string {
         return points;
       }
 
-      function determineSides(edge, fromNode, toNode) {
+      /**
+       * Determine the best side for connection based on relative position
+       * Used when no explicit connector is specified
+       */
+      function determineBestSide(fromNode, toNode, isSource) {
+        var fromCx = fromNode.x + nodeWidth / 2;
+        var fromCy = fromNode.y + nodeHeight / 2;
+        var toCx = toNode.x + nodeWidth / 2;
+        var toCy = toNode.y + nodeHeight / 2;
+        
+        var dx = toCx - fromCx;
+        var dy = toCy - fromCy;
+        var absDx = Math.abs(dx);
+        var absDy = Math.abs(dy);
+        
+        if (isSource) {
+          // Determine which side to EXIT from
+          // Prefer the side closest to the target
+          if (absDx > absDy * 1.5) {
+            // Predominantly horizontal
+            return dx > 0 ? "right" : "left";
+          } else if (absDy > absDx * 1.5) {
+            // Predominantly vertical
+            return dy > 0 ? "bottom" : "top";
+          } else {
+            // Diagonal - prefer vertical exit for cleaner routing
+            return dy > 0 ? "bottom" : "top";
+          }
+        } else {
+          // Determine which side to ENTER from
+          // Enter from the side closest to where the connection is coming from
+          if (absDx > absDy * 1.5) {
+            // Coming from side
+            return dx > 0 ? "left" : "right";
+          } else if (absDy > absDx * 1.5) {
+            // Coming from above/below
+            return dy > 0 ? "top" : "bottom";
+          } else {
+            // Diagonal - prefer entering from the side the connection comes from
+            if (absDx > absDy) {
+              return dx > 0 ? "left" : "right";
+            } else {
+              return dy > 0 ? "top" : "bottom";
+            }
+          }
+        }
+      }
+
+      function determineSides(edge, fromNode, toNode, allNodes) {
         var label = edge.label;
         var isError = isErrorEdge(label);
         var dx = (toNode.x + nodeWidth / 2) - (fromNode.x + nodeWidth / 2);
@@ -564,10 +961,94 @@ export function getCanvasScript(): string {
         var outSide = "bottom";
         var inSide = "top";
         
-        // Target positions
-        var targetToRight = dx > nodeWidth * 0.3;
-        var targetToLeft = dx < -nodeWidth * 0.3;
-        var targetBelow = dy > nodeHeight * 0.3;
+        // Handle numbered target connectors - use string ops instead of regex for reliability
+        var inConnNum = -1;
+        if (targetConn.indexOf("in") === 0 && targetConn.length > 2) {
+          var numPart = targetConn.substring(2);
+          var parsed = parseInt(numPart, 10);
+          if (!isNaN(parsed)) {
+            inConnNum = parsed;
+          }
+        }
+        
+        // Check if there's a blocking node between source and target (for same-column routing)
+        function hasBlockingNodeBetween() {
+          var minY = Math.min(fromNode.y + nodeHeight, toNode.y);
+          var maxY = Math.max(fromNode.y + nodeHeight, toNode.y);
+          var checkX = fromNode.x + nodeWidth / 2;
+          
+          for (var id in allNodes) {
+            if (id === fromNode.id || id === toNode.id) continue;
+            var bn = allNodes[id];
+            // Node is between source and target vertically
+            if (bn.y + nodeHeight > minY && bn.y < maxY) {
+              // Node overlaps horizontally with the straight-down path
+              if (checkX >= bn.x && checkX <= bn.x + nodeWidth) {
+                console.log("  BLOCKING NODE DETECTED:", bn.id, "between", fromNode.id, "and", toNode.id);
+                return true;
+              }
+            }
+          }
+          return false;
+        }
+        
+        // Debug logging - comprehensive
+        console.log("DETERMINE_SIDES:", fromNode.id, "→", toNode.id);
+        console.log("  sourceConn:", sourceConn, "targetConn:", targetConn);
+        console.log("  dx:", dx, "dy:", dy);
+        console.log("  fromNode pos:", fromNode.x, fromNode.y, "toNode pos:", toNode.x, toNode.y);
+        
+        // Target connector determines entry side - RESPECT XML if specified
+        if (targetConn === "in" || targetConn === "in1" || targetConn === "in2") {
+          // Standard input connectors - default to top, but use side entry for horizontal adjacency
+          var absDxLocal = Math.abs(dx);
+          var absDyLocal = Math.abs(dy);
+          if (absDyLocal < nodeHeight * 0.5 && absDxLocal > nodeWidth * 0.5) {
+            // Horizontally adjacent - enter from the side facing the source
+            inSide = dx > 0 ? "left" : "right";
+            console.log("  IN connector with horizontal adjacency - using side entry:", inSide);
+          } else {
+            inSide = "top";
+          }
+        } else if (inConnNum >= 3) {
+          // in3, in4, etc. - determine best entry side based on where connection comes from
+          // Also check for blocking nodes that would require routing around
+          console.log("  ENTERING in3+ block, inConnNum:", inConnNum);
+          
+          // First check if there's a blocking node - if so, always go around
+          var hasBlocker = hasBlockingNodeBetween();
+          
+          if (dx < -nodeWidth * 0.3) {
+            // Source is to the right of target - enter from right
+            inSide = "right";
+            console.log("  Setting inSide = right (dx < threshold)");
+          } else if (dx > nodeWidth * 0.3) {
+            // Source is to the left of target - enter from left  
+            inSide = "left";
+            console.log("  Setting inSide = left (dx > threshold)");
+          } else if (hasBlocker) {
+            // Same column but blocking node in between - route around from the right
+            // (prefer right side as it's typically less cluttered)
+            inSide = "right";
+            console.log("  Setting inSide = right (blocking node detected)");
+          } else if (dy < 0) {
+            // Source is above - enter from top
+            inSide = "top";
+          } else {
+            // Source is below - enter from bottom
+            inSide = "bottom";
+          }
+        } else if (targetConn === "loop") {
+          inSide = "top";
+        } else if (targetConn === "left") {
+          inSide = "left";
+        } else if (targetConn === "right") {
+          inSide = "right";
+        } else if (targetConn === "top") {
+          inSide = "top";
+        } else if (targetConn === "bottom") {
+          inSide = "bottom";
+        }
         
         // Source connector determines exit side
         // Decision branches ALWAYS exit from their designated side for visual clarity
@@ -577,46 +1058,139 @@ export function getCanvasScript(): string {
           outSide = "right";  // YES always exits right
         } else if (sourceConn === "no" || sourceConn === "false") {
           outSide = "left";   // NO always exits left
+        } else if (!sourceConn && !targetConn) {
+          // NEITHER source nor target connector specified - choose optimal sides based on spatial relationship
+          var absDx = Math.abs(dx);
+          var absDy = Math.abs(dy);
+          
+          if (absDy > absDx * 1.5) {
+            // Primarily vertical relationship
+            if (dy > 0) {
+              outSide = "bottom";
+              inSide = "top";
+            } else {
+              outSide = "top";
+              inSide = "bottom";
+            }
+          } else if (absDx > absDy * 1.5) {
+            // Primarily horizontal relationship - use horizontal routing
+            if (dx > 0) {
+              outSide = "right";
+              inSide = "left";
+            } else {
+              outSide = "left";
+              inSide = "right";
+            }
+          } else {
+            // Diagonal - prefer vertical-first routing (exit bottom/top, enter from side)
+            if (dy > 0) {
+              outSide = "bottom";
+              if (dx > 0) {
+                inSide = "left";
+              } else {
+                inSide = "right";
+              }
+            } else {
+              outSide = "top";
+              if (dx > 0) {
+                inSide = "left";
+              } else {
+                inSide = "right";
+              }
+            }
+          }
+          console.log("  NO CONNECTORS - choosing optimal: outSide:", outSide, "inSide:", inSide, "absDx:", absDx, "absDy:", absDy);
+        } else if (!sourceConn) {
+          // No source connector specified
+          // If target has a specific inSide, choose outSide that routes cleanly to it
+          if (inSide === "top") {
+            // Target enters from top - prefer exiting bottom for clean vertical flow
+            outSide = "bottom";
+          } else if (inSide === "right") {
+            // Target enters from right - we need to approach from the right side
+            // Check if there's a blocking node directly below that we need to route around
+            var hasBlocker = hasBlockingNodeBetween();
+            if (hasBlocker) {
+              // Blocking node below - exit right to go around it
+              outSide = "right";
+              console.log("  BLOCKING detected: exiting RIGHT instead of BOTTOM");
+            } else if (dx < 0 && dy > nodeHeight) {
+              // Source is to the right AND target is significantly below - exit bottom
+              outSide = "bottom";
+            } else if (dx < 0) {
+              // Source is to the right but target is roughly same level or above - exit right
+              outSide = "right";
+            } else {
+              // Source is to the left of target - exit right and go around to approach from right
+              outSide = "right";
+            }
+          } else if (inSide === "left") {
+            // Target enters from left - we need to approach from the left side
+            // If source is above and to the left, exit bottom (cleaner vertical-first path)
+            // If source is below and to the left, exit left to loop around
+            if (dx > 0 && dy > nodeHeight) {
+              // Source is to the left AND target is significantly below - exit bottom
+              outSide = "bottom";
+            } else if (dx > 0) {
+              // Source is to the left but target is roughly same level or above - exit left
+              outSide = "left";
+            } else {
+              // Source is to the right of target - exit bottom then go left
+              outSide = "bottom";
+            }
+          } else if (inSide === "bottom") {
+            outSide = "top";
+          } else {
+            // Fallback to best side determination
+            outSide = determineBestSide(fromNode, toNode, true);
+          }
         }
         
-        // Target connector determines entry side - RESPECT XML if specified
-        if (targetConn === "in" || targetConn === "in1" || targetConn === "in2") {
-          inSide = "top";
-        } else if (targetConn === "loop") {
-          inSide = "top";
-        } else if (targetConn === "left") {
-          inSide = "left";
-        } else if (targetConn === "right") {
-          inSide = "right";
-        } else if (targetConn === "bottom") {
-          inSide = "bottom";
-        } else if (targetConn) {
-          inSide = "top";
-        } else {
-          // No target connector - determine based on position and exit side
+        // If no target connector was specified, determine entry based on exit side
+        if (!targetConn && inConnNum < 0) {
           if (outSide === "right") {
-            // Exiting right (yes branch or error)
-            if (targetToRight) {
+            // Exiting right
+            if (dx > nodeWidth * 0.5) {
               inSide = "left";  // Target to right - enter from left
+            } else if (dy > nodeHeight * 0.5) {
+              inSide = "top";   // Target below - enter from top
+            } else if (dy < -nodeHeight * 0.5) {
+              inSide = "bottom"; // Target above - enter from bottom
             } else {
-              inSide = "top";   // Target below or left - enter from top
+              inSide = "left";
             }
           } else if (outSide === "left") {
-            // Exiting left (no branch)
-            if (targetToLeft) {
+            // Exiting left
+            if (dx < -nodeWidth * 0.5) {
               inSide = "right"; // Target to left - enter from right
+            } else if (dy > nodeHeight * 0.5) {
+              inSide = "top";   // Target below - enter from top
+            } else if (dy < -nodeHeight * 0.5) {
+              inSide = "bottom"; // Target above - enter from bottom
             } else {
-              inSide = "top";   // Target below or right - enter from top
+              inSide = "right";
             }
+          } else if (outSide === "bottom") {
+            // Exiting bottom - prefer entering from top for vertical flow
+            inSide = "top";
+          } else if (outSide === "top") {
+            // Exiting top
+            inSide = "bottom";
           }
         }
         
         // Handle back edges (target above source)
-        if (dy < -nodeHeight && !targetConn) {
+        if (dy < -nodeHeight && !targetConn && !sourceConn) {
           if (outSide === "bottom") outSide = "top";
           if (inSide === "top") inSide = "bottom";
         }
 
+        // Debug logging for in3 connections
+        if (targetConn === "in3") {
+          console.log("  RESULT: outSide:", outSide, "inSide:", inSide);
+        }
+
+        console.log("  RESULT: outSide:", outSide, "inSide:", inSide);
         return { outSide: outSide, inSide: inSide };
       }
 
@@ -636,7 +1210,7 @@ export function getCanvasScript(): string {
         if (!fromNode || !toNode) continue;
 
         var edgeId = "edge-" + i + "-" + edge.from + "-" + edge.to;
-        var sides = determineSides(edge, fromNode, toNode);
+        var sides = determineSides(edge, fromNode, toNode, nodeMap);
 
         var outKey = edge.from + "|" + sides.outSide;
         var inKey = edge.to + "|" + sides.inSide;
@@ -662,7 +1236,7 @@ export function getCanvasScript(): string {
         var idx = indexMap[key] || 0;
         indexMap[key] = idx + 1;
         var total = countMap[key] || 1;
-        return (idx - (total - 1) / 2) * EDGE_SPACING;
+        return { offset: (idx - (total - 1) / 2) * EDGE_SPACING, index: idx };
       }
 
       for (var p = 0; p < planned.length; p++) {
@@ -679,8 +1253,11 @@ export function getCanvasScript(): string {
         // Offsets distribute multiple edges leaving/entering the same side
         var outKey = edge.from + "|" + plan.outSide;
         var inKey = edge.to + "|" + plan.inSide;
-        var outOffset = nextOffset(outIndex, outCounts, outKey);
-        var inOffset = nextOffset(inIndex, inCounts, inKey);
+        var outResult = nextOffset(outIndex, outCounts, outKey);
+        var inResult = nextOffset(inIndex, inCounts, inKey);
+        var outOffset = outResult.offset;
+        var inOffset = inResult.offset;
+        var edgeToTargetIndex = inResult.index;
 
         var start = getAnchor(fromNode, plan.outSide, (plan.outSide === "top" || plan.outSide === "bottom") ? outOffset : outOffset);
         var end = getAnchor(toNode, plan.inSide, (plan.inSide === "top" || plan.inSide === "bottom") ? inOffset : inOffset);
@@ -689,13 +1266,69 @@ export function getCanvasScript(): string {
         var bendPoints = (edge.display && edge.display.bendPoints) ? edge.display.bendPoints : null;
         var hasBendPoints = bendPoints && bendPoints.length > 0;
 
+        // Get blocking nodes for this edge (all nodes except source and target)
+        var blockingNodes = getBlockingNodes(fromNode, toNode, nodeMap);
+
+        // Calculate the optimal route distance
+        var dx = (toNode.x + nodeWidth / 2) - (fromNode.x + nodeWidth / 2);
+        var dy = (toNode.y + nodeHeight / 2) - (fromNode.y + nodeHeight / 2);
+        var absDx = Math.abs(dx);
+        var absDy = Math.abs(dy);
+
+        // Check if XML bend points should be ignored in favor of smart routing
+        if (hasBendPoints) {
+          // Case 1: blocking node in the path
+          if (blockingNodes.length > 0) {
+            var minY = Math.min(fromNode.y, toNode.y);
+            var maxY = Math.max(fromNode.y, toNode.y) + nodeHeight;
+            var minX = Math.min(fromNode.x, toNode.x);
+            var maxX = Math.max(fromNode.x, toNode.x) + nodeWidth;
+            
+            for (var bi = 0; bi < blockingNodes.length; bi++) {
+              var bn = blockingNodes[bi];
+              var bnTop = bn.y;
+              var bnBottom = bn.y + nodeHeight;
+              var bnLeft = bn.x;
+              var bnRight = bn.x + nodeWidth;
+              
+              var verticalOverlap = bnBottom > minY && bnTop < maxY;
+              var horizontalOverlap = bnRight > minX && bnLeft < maxX;
+              
+              if (verticalOverlap && horizontalOverlap) {
+                console.log("IGNORING XML BEND POINTS - blocking node " + bn.id + " is in path");
+                hasBendPoints = false;
+                break;
+              }
+            }
+          }
+          
+          // Case 2: nodes are horizontally adjacent (same Y, different X) - use direct horizontal route
+          // The XML bend points may specify a long detour that we want to avoid
+          if (hasBendPoints && absDy < nodeHeight * 0.5 && absDx > nodeWidth * 0.5) {
+            // Primarily horizontal relationship - a direct right→left or left→right is optimal
+            console.log("IGNORING XML BEND POINTS - horizontal adjacency, direct route is better. absDx:", absDx, "absDy:", absDy);
+            hasBendPoints = false;
+          }
+          
+          // Debug: log when we're keeping bend points for horizontal/similar-level nodes
+          if (hasBendPoints && absDy < nodeHeight) {
+            console.log("KEEPING BEND POINTS for edge:", fromNode.id, "→", toNode.id, "absDx:", absDx, "absDy:", absDy, "outSide:", plan.outSide, "inSide:", plan.inSide);
+          }
+        }
+
         // Backward edges (or target above) keep the existing left-loop curve
         var isGoingUp = end.y < start.y - 5;
+        
+        // Check if this is a primarily horizontal edge (should use straight path, not loop curve)
+        var isPrimarilyHorizontal = (plan.outSide === "right" && plan.inSide === "left") || 
+                                    (plan.outSide === "left" && plan.inSide === "right");
+        
+        console.log("EDGE ROUTING:", fromNode.id, "→", toNode.id, "start:", start.x, start.y, "end:", end.x, end.y, "isBackEdge:", isBackEdge, "isGoingUp:", isGoingUp, "isPrimarilyHorizontal:", isPrimarilyHorizontal, "hasBendPoints:", hasBendPoints);
 
         var points;
         var arrowAngle;
 
-        if (isBackEdge || (isGoingUp && !hasBendPoints)) {
+        if (isBackEdge || (isGoingUp && !hasBendPoints && !isPrimarilyHorizontal)) {
           // Use bottom->top anchors for loops to look like the legacy editor
           var x1 = fromNode.x + nodeWidth / 2;
           var y1 = fromNode.y + nodeHeight;
@@ -704,6 +1337,18 @@ export function getCanvasScript(): string {
 
           var loopOffset = 50;
           var leftX = Math.min(fromNode.x, toNode.x) - loopOffset;
+          
+          // Check for blocking nodes to the left and adjust loop offset
+          for (var bi = 0; bi < blockingNodes.length; bi++) {
+            var bn = blockingNodes[bi];
+            var bnRight = bn.x + nodeWidth + 20;
+            if (bn.y + nodeHeight > Math.min(y1, y2) && bn.y < Math.max(y1, y2)) {
+              if (bn.x < leftX + loopOffset && bnRight > leftX) {
+                leftX = bn.x - 30;
+              }
+            }
+          }
+          
           points = [];
           var steps = 30;
 
@@ -729,11 +1374,11 @@ export function getCanvasScript(): string {
           arrowAngle = -Math.PI / 2;
         } else if (hasBendPoints) {
           // Use XML bend points for routing
-          points = buildOrthogonalPath(start, end, bendPoints, fromNode, toNode, plan.outSide, plan.inSide, outOffset, inOffset);
+          points = buildOrthogonalPath(start, end, bendPoints, fromNode, toNode, plan.outSide, plan.inSide, outOffset, inOffset, blockingNodes, edgeToTargetIndex);
           arrowAngle = getArrowAngleForSide(plan.inSide);
         } else {
-          // No bend points - use simple routing
-          points = buildOrthogonalPath(start, end, null, fromNode, toNode, plan.outSide, plan.inSide, outOffset, inOffset);
+          // No bend points - use smart routing with node avoidance
+          points = buildOrthogonalPath(start, end, null, fromNode, toNode, plan.outSide, plan.inSide, outOffset, inOffset, blockingNodes, edgeToTargetIndex);
           arrowAngle = getArrowAngleForSide(plan.inSide);
         }
 
@@ -866,6 +1511,67 @@ export function getCanvasScript(): string {
       // Store reference for selection
       nodeGroups[node.id] = group;
 
+      // Special rendering for join nodes - draw as circle like legacy editor
+      if (node.type === "join") {
+        var circleRadius = 15;
+        var circleX = nodeWidth / 2;
+        var circleY = nodeHeight / 2;
+        
+        // Circle background
+        var circle = new Konva.Circle({
+          x: circleX,
+          y: circleY,
+          radius: circleRadius,
+          fill: "#0d1328",
+          stroke: color,
+          strokeWidth: 2,
+          shadowColor: "#000",
+          shadowBlur: 10,
+          shadowOpacity: 0.4,
+          shadowOffsetY: 3
+        });
+        group.add(circle);
+        
+        // Inner highlight
+        group.add(new Konva.Circle({
+          x: circleX,
+          y: circleY - 3,
+          radius: circleRadius - 4,
+          fill: "rgba(255,255,255,0.05)",
+          listening: false
+        }));
+
+        // Hover effects for join node
+        group.on("mouseenter", function() {
+          document.body.style.cursor = "pointer";
+          if (selectedNodeId !== node.id) {
+            circle.shadowBlur(20);
+            circle.shadowOpacity(0.6);
+            layer.batchDraw();
+          }
+        });
+
+        group.on("mouseleave", function() {
+          document.body.style.cursor = "default";
+          if (selectedNodeId !== node.id) {
+            circle.shadowBlur(10);
+            circle.shadowOpacity(0.4);
+            layer.batchDraw();
+          }
+        });
+
+        // Click to select
+        group.on("click tap", function(e) {
+          e.cancelBubble = true;
+          clearEdgeSelection(layer);
+          selectNode(node, layer);
+        });
+
+        layer.add(group);
+        return;
+      }
+
+      // Standard node rendering for non-join nodes
       // Node background
       var rect = new Konva.Rect({
         width: nodeWidth,
