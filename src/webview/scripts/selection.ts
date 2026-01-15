@@ -111,17 +111,40 @@ export function getSelectionScript(): string {
       var group = nodeGroups[nodeId];
       if (!group) return;
 
+      // Try to find Rect first (for regular nodes)
       var rect = group.findOne("Rect");
-      if (!rect) return;
+      if (rect) {
+        if (isSelected) {
+          rect.strokeWidth(3);
+          rect.shadowBlur(30);
+          rect.shadowOpacity(0.8);
+        } else {
+          rect.strokeWidth(2);
+          rect.shadowBlur(15);
+          rect.shadowOpacity(0.4);
+        }
+        return;
+      }
 
-      if (isSelected) {
-        rect.strokeWidth(3);
-        rect.shadowBlur(30);
-        rect.shadowOpacity(0.8);
-      } else {
-        rect.strokeWidth(2);
-        rect.shadowBlur(15);
-        rect.shadowOpacity(0.4);
+      // Try to find Circle (for join nodes)
+      var circles = group.find("Circle");
+      if (circles && circles.length > 0) {
+        // Find the main circle (the one with stroke, not fill-only)
+        for (var i = 0; i < circles.length; i++) {
+          var circle = circles[i];
+          if (circle.strokeWidth() > 0) {
+            if (isSelected) {
+              circle.strokeWidth(4);
+              circle.shadowBlur(20);
+              circle.shadowOpacity(0.8);
+            } else {
+              circle.strokeWidth(3);
+              circle.shadowBlur(10);
+              circle.shadowOpacity(0.5);
+            }
+            break;
+          }
+        }
       }
     }
 

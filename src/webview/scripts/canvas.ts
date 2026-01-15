@@ -477,50 +477,34 @@ export function getCanvasScript(): string {
           if (outSide === "bottom" && inSide === "top") {
             // Standard downward flow
             if (Math.abs(dx) > 5) {
-              // Nodes not aligned - need to route with a horizontal segment
+              // Use offset for the horizontal segment to prevent overlap
               var midY = (start.y + end.y) / 2;
-              points.push(start.x, midY);
-              points.push(end.x, midY);
+              var routeX = start.x + startOffset;
+              points.push(routeX, midY);
+              points.push(end.x + endOffset, midY);
             }
-            // If aligned (dx <= 5), just go straight down - no intermediate points needed
+            // If aligned, the offset is already in start.x and end.x
           } else if (outSide === "right" && inSide === "top") {
             // Decision YES or error going to node below
-            // Go RIGHT first to clear the source node, then DOWN, then LEFT above target, then DOWN to target
-            // Use startOffset for lane spacing when multiple edges exit same node
-            // Also use relative Y position to offset lanes for edges from different nodes
-            var laneSpacing = Math.abs(startOffset) * 7.5;
-            var baseClearance = 30;
+            // Go RIGHT first to clear the source node, then DOWN, then LEFT to target
+            // Route OUTSIDE other blocks by going far enough right
+            var clearanceX = start.x + nodeWidth / 2 + 30 + Math.abs(startOffset) * 2;
             // If target is to the left, we need to go even further right to clear
             if (dx < 0) {
-              baseClearance = 50;
+              clearanceX = start.x + nodeWidth / 2 + 50;
             }
-            // Add additional offset based on vertical distance to prevent overlap
-            // Edges going further down get lanes further right
-            var distanceOffset = Math.min(Math.abs(dy) / 7, 90);
-            var clearanceX = start.x + nodeWidth / 2 + baseClearance + laneSpacing + distanceOffset;
-            // Go above the target first, then come straight down to enter from top
-            var aboveTargetY = end.y - 20;
             points.push(clearanceX, start.y);
-            points.push(clearanceX, aboveTargetY);
-            points.push(end.x, aboveTargetY);
+            points.push(clearanceX, end.y);
           } else if (outSide === "left" && inSide === "top") {
             // Decision NO going to node below
-            // Go LEFT first to clear, then DOWN, then RIGHT above target, then DOWN to target
-            // Use startOffset for lane spacing when multiple edges exit same node
-            var laneSpacing = Math.abs(startOffset) * 7.5;
-            var baseClearance = 30;
+            // Go LEFT first to clear, then DOWN, then RIGHT to target
+            var clearanceX = start.x - nodeWidth / 2 - 30 - Math.abs(startOffset) * 2;
             // If target is to the right, need to go further left
             if (dx > 0) {
-              baseClearance = 50;
+              clearanceX = start.x - nodeWidth / 2 - 50;
             }
-            // Add additional offset based on vertical distance to prevent overlap
-            var distanceOffset = Math.min(Math.abs(dy) / 7, 90);
-            var clearanceX = start.x - nodeWidth / 2 - baseClearance - laneSpacing - distanceOffset;
-            // Go above the target first, then come straight down to enter from top
-            var aboveTargetY = end.y - 20;
             points.push(clearanceX, start.y);
-            points.push(clearanceX, aboveTargetY);
-            points.push(end.x, aboveTargetY);
+            points.push(clearanceX, end.y);
           } else if (outSide === "right" && inSide === "left") {
             // Horizontal connection
             if (Math.abs(dy) > 10) {
@@ -566,7 +550,7 @@ export function getCanvasScript(): string {
         return points;
       }
 
-      function determineSides(edge, fromNode, toNode, nodeMap) {
+      function determineSides(edge, fromNode, toNode) {
         var label = edge.label;
         var isError = isErrorEdge(label);
         var dx = (toNode.x + nodeWidth / 2) - (fromNode.x + nodeWidth / 2);
@@ -584,53 +568,15 @@ export function getCanvasScript(): string {
         var targetToRight = dx > nodeWidth * 0.3;
         var targetToLeft = dx < -nodeWidth * 0.3;
         var targetBelow = dy > nodeHeight * 0.3;
-        var targetDirectlyBelow = Math.abs(dx) < nodeWidth * 0.5 && dy > 0;
-        
-        // Check if the cell directly below the source node is empty
-        // This helps determine if we can go straight down
-        var cellBelowEmpty = true;
-        if (nodeMap) {
-          var sourceBottomY = fromNode.y + nodeHeight;
-          var targetTopY = toNode.y;
-          // Check if any node occupies the space between source and target
-          for (var nodeId in nodeMap) {
-            if (nodeId === fromNode.id || nodeId === toNode.id) continue;
-            var otherNode = nodeMap[nodeId];
-            var otherCenterX = otherNode.x + nodeWidth / 2;
-            var sourceCenterX = fromNode.x + nodeWidth / 2;
-            // Check if node is in the vertical path
-            if (Math.abs(otherCenterX - sourceCenterX) < nodeWidth * 0.8) {
-              // Node is in same column
-              if (otherNode.y > sourceBottomY && otherNode.y < targetTopY) {
-                // Node is between source and target
-                cellBelowEmpty = false;
-                break;
-              }
-            }
-          }
-        }
         
         // Source connector determines exit side
         // Decision branches ALWAYS exit from their designated side for visual clarity
-        // EXCEPTION: if target is directly below AND path is clear, go straight down
         if (sourceConn === "error" || sourceConn === "pipelet_error" || isError) {
           outSide = "right";
         } else if (sourceConn === "yes" || sourceConn === "true") {
-          // YES branch: normally exits right, but if target is directly below
-          // with only 1 vertical gap and path is clear, go straight down
-          if (targetDirectlyBelow && cellBelowEmpty && dy < verticalGap * 1.5) {
-            outSide = "bottom";
-          } else {
-            outSide = "right";  // YES always exits right
-          }
+          outSide = "right";  // YES always exits right
         } else if (sourceConn === "no" || sourceConn === "false") {
-          // NO branch: normally exits left, but if target is directly below
-          // with only 1 vertical gap and path is clear, go straight down
-          if (targetDirectlyBelow && cellBelowEmpty && dy < verticalGap * 1.5) {
-            outSide = "bottom";
-          } else {
-            outSide = "left";   // NO always exits left
-          }
+          outSide = "left";   // NO always exits left
         }
         
         // Target connector determines entry side - RESPECT XML if specified
@@ -690,7 +636,7 @@ export function getCanvasScript(): string {
         if (!fromNode || !toNode) continue;
 
         var edgeId = "edge-" + i + "-" + edge.from + "-" + edge.to;
-        var sides = determineSides(edge, fromNode, toNode, nodeMap);
+        var sides = determineSides(edge, fromNode, toNode);
 
         var outKey = edge.from + "|" + sides.outSide;
         var inKey = edge.to + "|" + sides.inSide;
@@ -738,18 +684,6 @@ export function getCanvasScript(): string {
 
         var start = getAnchor(fromNode, plan.outSide, (plan.outSide === "top" || plan.outSide === "bottom") ? outOffset : outOffset);
         var end = getAnchor(toNode, plan.inSide, (plan.inSide === "top" || plan.inSide === "bottom") ? inOffset : inOffset);
-
-        // For straight vertical connections (bottom→top), align X coordinates if nodes are nearly aligned
-        var fromCenterX = fromNode.x + nodeWidth / 2;
-        var toCenterX = toNode.x + nodeWidth / 2;
-        var nodesAligned = Math.abs(fromCenterX - toCenterX) < 5;
-        
-        if (plan.outSide === "bottom" && plan.inSide === "top" && nodesAligned) {
-          // Use the same X for both anchors to ensure a perfectly straight line
-          var alignedX = fromCenterX;
-          start = { x: alignedX, y: fromNode.y + nodeHeight };
-          end = { x: alignedX, y: toNode.y };
-        }
 
         // Check if edge has bend points from XML
         var bendPoints = (edge.display && edge.display.bendPoints) ? edge.display.bendPoints : null;

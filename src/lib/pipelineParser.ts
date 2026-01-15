@@ -1,6 +1,21 @@
 import { DOMParser } from "@xmldom/xmldom";
 import { BendPoint, ConfigProperty, KeyBinding, ParsedPipeline, PipelineEdge, PipelineNode, PipelineNodeType, TransitionDisplay } from "./types";
 
+/**
+ * Deferred edge to be processed after all nodes are parsed
+ * These are edges with target-path references that need resolution
+ */
+interface DeferredEdge {
+  fromNodeId: string;
+  fromBranchPath: string;
+  fromSegmentIndex: number;
+  targetPath: string;
+  label?: string;
+  sourceConnector?: string;
+  targetConnector?: string;
+  display?: TransitionDisplay;
+}
+
 export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedPipeline {
   const doc = new DOMParser().parseFromString(xml, "text/xml");
   const pipelineEl = doc.getElementsByTagName("pipeline").item(0);
@@ -16,12 +31,22 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
 
   const nodes: PipelineNode[] = [];
   const edges: PipelineEdge[] = [];
+  
+  // Map segment paths to their first node ID for target-path resolution
+  // Key format: "branchPath:segmentIndex" -> nodeId
+  const segmentFirstNodeMap = new Map<string, string>();
+  
+  // Deferred edges that need target-path resolution
+  const deferredEdges: DeferredEdge[] = [];
 
   let branchOrdinal = 0;
   for (const branchEl of getElementChildren(pipelineEl, "branch")) {
     const path = branchEl.getAttribute("basename") || `branch-${branchOrdinal++}`;
     parseBranchWithEntry(branchEl, path);
   }
+
+  // Process deferred edges after all nodes are parsed
+  processDeferredEdges();
 
   return { name: pipelineName, group, type, description, nodes, edges };
 
@@ -55,6 +80,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
     let pendingSourceConnector: string | undefined;
     let pendingTargetConnector: string | undefined;
     let pendingDisplay: TransitionDisplay | undefined;
+    let pendingTargetPath: string | undefined;
     let nodeIndex = 0;
 
     for (const child of getElementChildren(segmentEl)) {
@@ -63,17 +89,37 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
 
         if (!firstNodeId) {
           firstNodeId = parsed.id;
+          // Register this as the first node of this segment for target-path resolution
+          const segmentKey = `${branchPath}:${segmentIndex}`;
+          segmentFirstNodeMap.set(segmentKey, parsed.id);
         }
 
+        // Handle pending transition
         if (lastNodeId) {
-          edges.push({
-            from: lastNodeId,
-            to: parsed.id,
-            label: pendingLabel,
-            sourceConnector: pendingSourceConnector,
-            targetConnector: pendingTargetConnector,
-            display: pendingDisplay,
-          });
+          if (pendingTargetPath) {
+            // This transition has a target-path - defer it for later resolution
+            // The target is NOT the next node in this segment, it's somewhere else
+            deferredEdges.push({
+              fromNodeId: lastNodeId,
+              fromBranchPath: branchPath,
+              fromSegmentIndex: segmentIndex,
+              targetPath: pendingTargetPath,
+              label: pendingLabel,
+              sourceConnector: pendingSourceConnector,
+              targetConnector: pendingTargetConnector,
+              display: pendingDisplay,
+            });
+          } else {
+            // Normal sequential edge within the segment (no target-path)
+            edges.push({
+              from: lastNodeId,
+              to: parsed.id,
+              label: pendingLabel,
+              sourceConnector: pendingSourceConnector,
+              targetConnector: pendingTargetConnector,
+              display: pendingDisplay,
+            });
+          }
         }
 
         lastNodeId = parsed.id;
@@ -81,6 +127,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
         pendingSourceConnector = undefined;
         pendingTargetConnector = undefined;
         pendingDisplay = undefined;
+        pendingTargetPath = undefined;
       } else if (child.tagName === "simple-transition" || child.tagName === "transition") {
         const label = deriveTransitionLabel(child);
         const targetConnector = child.getAttribute("target-connector");
@@ -104,13 +151,29 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
           pendingSourceConnector = undefined;
           pendingTargetConnector = undefined;
           pendingDisplay = undefined;
+          pendingTargetPath = undefined;
         } else {
           pendingLabel = label;
           pendingSourceConnector = sourceConnector || undefined;
           pendingTargetConnector = targetConnector || undefined;
           pendingDisplay = transitionDisplay;
+          pendingTargetPath = targetPath || undefined;
         }
       }
+    }
+
+    // Handle any trailing transition with target-path (edge that goes outside this segment)
+    if (lastNodeId && pendingTargetPath) {
+      deferredEdges.push({
+        fromNodeId: lastNodeId,
+        fromBranchPath: branchPath,
+        fromSegmentIndex: segmentIndex,
+        targetPath: pendingTargetPath,
+        label: pendingLabel,
+        sourceConnector: pendingSourceConnector,
+        targetConnector: pendingTargetConnector,
+        display: pendingDisplay,
+      });
     }
 
     return { firstNodeId, lastNodeId };
@@ -185,6 +248,148 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
     }
 
     return parsedNode;
+  }
+
+  /**
+   * Process deferred edges by resolving target-path references
+   * 
+   * Target-path format examples:
+   * - "./+1"  -> next segment in current branch (segmentIndex + 1)
+   * - "./-2"  -> 2 segments back in current branch (segmentIndex - 2)
+   * - "../+1" -> next segment in parent branch
+   * - "../../+1" -> next segment in grandparent branch
+   * - "/Start.2" -> absolute: segment 2 in Start branch
+   * - "./b5.3"  -> nested branch "b5", segment 3 (relative to current path)
+   */
+  function processDeferredEdges() {
+    for (const deferred of deferredEdges) {
+      const targetNodeId = resolveTargetPath(
+        deferred.targetPath,
+        deferred.fromBranchPath,
+        deferred.fromSegmentIndex
+      );
+
+      if (targetNodeId) {
+        edges.push({
+          from: deferred.fromNodeId,
+          to: targetNodeId,
+          label: deferred.label,
+          sourceConnector: deferred.sourceConnector,
+          targetConnector: deferred.targetConnector,
+          display: deferred.display,
+        });
+      }
+    }
+  }
+
+  /**
+   * Resolve a target-path to find the target node ID
+   * 
+   * Target-path format examples:
+   * - "./+1"  -> next segment in current branch (segmentIndex + 1)
+   * - "./-2"  -> 2 segments back in current branch (segmentIndex - 2)
+   * - "../+1" -> next segment in parent branch
+   * - "../../+1" -> next segment in grandparent branch
+   * - "/Start.2" -> absolute: segment 2 in Start branch
+   * - "./b5.3"  -> nested branch "b5", segment 3 (relative to current path)
+   */
+  function resolveTargetPath(
+    targetPath: string,
+    currentBranchPath: string,
+    currentSegmentIndex: number
+  ): string | undefined {
+    // Absolute path (starts with /)
+    // Format: /BranchName.segmentIndex
+    if (targetPath.startsWith("/")) {
+      const pathWithoutSlash = targetPath.slice(1);
+      const match = pathWithoutSlash.match(/^([^.]+)\.(\d+)$/);
+      if (match) {
+        const branchName = match[1];
+        const segmentIdx = parseInt(match[2], 10);
+        const segmentKey = `${branchName}:${segmentIdx}`;
+        return segmentFirstNodeMap.get(segmentKey);
+      }
+      return undefined;
+    }
+
+    // Relative path
+    let branchPath = currentBranchPath;
+    let segmentIndex = currentSegmentIndex;
+    let remainingPath = targetPath;
+
+    // Process parent references (../)
+    while (remainingPath.startsWith("../")) {
+      remainingPath = remainingPath.slice(3);
+      
+      // Branch paths are like "parentBranch:segIdx:nodeIdx/branchName" or just "branchName"
+      const lastSlashIndex = branchPath.lastIndexOf("/");
+      
+      if (lastSlashIndex > 0) {
+        // Extract the part before the last slash
+        // This could be "Start:2:1" or "Start:2:1/yes:0:0" for deeper nesting
+        const parentPart = branchPath.slice(0, lastSlashIndex);
+        
+        // Try to extract segment index from the end of parentPart
+        // Pattern: ....:segmentIndex:nodeIndex at the end
+        const segNodeMatch = parentPart.match(/:(\d+):(\d+)$/);
+        if (segNodeMatch) {
+          segmentIndex = parseInt(segNodeMatch[1], 10);
+          // Remove the :seg:node suffix to get just the branch path
+          branchPath = parentPart.replace(/:(\d+):(\d+)$/, "");
+        } else {
+          // No segment:node suffix, just use the parent part as the branch
+          branchPath = parentPart;
+        }
+      } else {
+        // At top level or simple branch name
+        // Check if current branch has segment:node info
+        const segNodeMatch = branchPath.match(/:(\d+):(\d+)$/);
+        if (segNodeMatch) {
+          segmentIndex = parseInt(segNodeMatch[1], 10);
+          branchPath = branchPath.replace(/:(\d+):(\d+)$/, "");
+        }
+        // If no more parent levels, we stay at current branch
+      }
+    }
+
+    // Handle "./" prefix (current level)
+    if (remainingPath.startsWith("./")) {
+      remainingPath = remainingPath.slice(2);
+    }
+
+    // Now parse the remaining path
+    // Format: +N, -N, or branchName.segmentIndex
+    
+    // Check for relative segment offset (+N or -N)
+    const offsetMatch = remainingPath.match(/^([+-])(\d+)$/);
+    if (offsetMatch) {
+      const sign = offsetMatch[1] === "+" ? 1 : -1;
+      const offset = parseInt(offsetMatch[2], 10);
+      const targetSegmentIndex = segmentIndex + sign * offset;
+      const segmentKey = `${branchPath}:${targetSegmentIndex}`;
+      return segmentFirstNodeMap.get(segmentKey);
+    }
+
+    // Check for nested branch reference (branchName.segmentIndex)
+    const nestedMatch = remainingPath.match(/^([^.]+)\.(\d+)$/);
+    if (nestedMatch) {
+      const nestedBranchName = nestedMatch[1];
+      const targetSegmentIdx = parseInt(nestedMatch[2], 10);
+      
+      // Search for the nested branch in the segment map
+      // The nested branch could be at various depths, so we search
+      for (const [key, nodeId] of segmentFirstNodeMap) {
+        // Look for patterns that end with "/nestedBranchName:targetSegmentIdx"
+        if (key.endsWith(`/${nestedBranchName}:${targetSegmentIdx}`)) {
+          // Verify it's under the current branch context
+          if (key.startsWith(branchPath)) {
+            return nodeId;
+          }
+        }
+      }
+    }
+
+    return undefined;
   }
 
   function describeNode(typeEl: Element | undefined): {
