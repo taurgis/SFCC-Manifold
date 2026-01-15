@@ -28,16 +28,34 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
   function parseBranchWithEntry(
     branchEl: Element,
     branchPath: string,
-    parentLoopNodeId?: string
+    parentLoopNodeId?: string,
+    isDoLoop = false
   ): { entryIds: string[] } {
     const entryIds: string[] = [];
     let segmentIndex = 0;
+    let previousSegmentLastNodeId: string | undefined;
 
-    for (const segmentEl of getElementChildren(branchEl, "segment")) {
+    const segments = getElementChildren(branchEl, "segment");
+    
+    for (const segmentEl of segments) {
       const result = parseSegment(segmentEl, branchPath, segmentIndex++, parentLoopNodeId);
-      if (result.firstNodeId) {
-        entryIds.push(result.firstNodeId);
+      
+      // For do-loops, only the first segment is an entry point
+      // Subsequent segments should be connected from the previous segment
+      if (isDoLoop) {
+        if (entryIds.length === 0 && result.firstNodeId) {
+          entryIds.push(result.firstNodeId);
+        } else if (previousSegmentLastNodeId && result.firstNodeId) {
+          // Connect previous segment's last node to this segment's first node
+          edges.push({ from: previousSegmentLastNodeId, to: result.firstNodeId });
+        }
+      } else {
+        if (result.firstNodeId) {
+          entryIds.push(result.firstNodeId);
+        }
       }
+      
+      previousSegmentLastNodeId = result.lastNodeId;
     }
 
     return { entryIds };
@@ -125,11 +143,15 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
 
       const nestedPath = `${branchPath}/${nestedBranch.getAttribute("basename") || connectorLabel}`;
       
+      // Determine if this is a "do" branch from a loop node
+      const isDoLoop = isLoopNode && connectorLabel === "do";
+      
       // Pass loop node ID if this is a loop node, so back-edges can reference it
       const branchResult = parseBranchWithEntry(
         nestedBranch,
         nestedPath,
-        isLoopNode ? id : undefined
+        isLoopNode ? id : undefined,
+        isDoLoop
       );
 
       for (const entry of branchResult.entryIds) {
