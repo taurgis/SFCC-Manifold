@@ -9,6 +9,8 @@ export function getCanvasScript(): string {
      */
     function renderLegend(placedNodes) {
       var legendEl = document.getElementById("legend");
+      if (!legendEl) return;
+      
       var seenTypes = {};
       
       for (var i = 0; i < placedNodes.length; i++) {
@@ -240,8 +242,12 @@ export function getCanvasScript(): string {
 
       var group = new Konva.Group({
         x: node.x,
-        y: node.y
+        y: node.y,
+        name: "node-group"
       });
+
+      // Store reference for selection
+      nodeGroups[node.id] = group;
 
       // Node background
       var rect = new Konva.Rect({
@@ -322,16 +328,26 @@ export function getCanvasScript(): string {
       // Hover effects
       group.on("mouseenter", function() {
         document.body.style.cursor = "pointer";
-        this.findOne("Rect").shadowBlur(25);
-        this.findOne("Rect").shadowOpacity(0.6);
-        layer.batchDraw();
+        if (selectedNodeId !== node.id) {
+          this.findOne("Rect").shadowBlur(25);
+          this.findOne("Rect").shadowOpacity(0.6);
+          layer.batchDraw();
+        }
       });
 
       group.on("mouseleave", function() {
         document.body.style.cursor = "default";
-        this.findOne("Rect").shadowBlur(15);
-        this.findOne("Rect").shadowOpacity(0.4);
-        layer.batchDraw();
+        if (selectedNodeId !== node.id) {
+          this.findOne("Rect").shadowBlur(15);
+          this.findOne("Rect").shadowOpacity(0.4);
+          layer.batchDraw();
+        }
+      });
+
+      // Click to select
+      group.on("click tap", function(e) {
+        e.cancelBubble = true;
+        selectNode(node, layer);
       });
 
       layer.add(group);

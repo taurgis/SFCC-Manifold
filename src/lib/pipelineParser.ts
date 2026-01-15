@@ -1,5 +1,5 @@
 import { DOMParser } from "@xmldom/xmldom";
-import { ParsedPipeline, PipelineEdge, PipelineNode, PipelineNodeType } from "./types";
+import { KeyBinding, ParsedPipeline, PipelineEdge, PipelineNode, PipelineNodeType, TemplateConfig } from "./types";
 
 export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedPipeline {
   const doc = new DOMParser().parseFromString(xml, "text/xml");
@@ -118,7 +118,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
       : undefined;
 
     const id = `${branchPath}:${segmentIndex}:${nodeIndex}`;
-    const { type, label, attributes } = describeNode(typeEl);
+    const { type, label, attributes, bindings, template, description } = describeNode(typeEl);
 
     const parsedNode: PipelineNode = {
       id,
@@ -126,6 +126,9 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
       type,
       branch: branchPath,
       attributes,
+      bindings,
+      template,
+      description,
       position,
     };
 
@@ -166,6 +169,9 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
     type: PipelineNodeType;
     label: string;
     attributes: Record<string, string | undefined>;
+    bindings?: KeyBinding[];
+    template?: TemplateConfig;
+    description?: string;
   } {
     if (!typeEl) {
       return { type: "unknown", label: "Unknown", attributes: {} };
@@ -184,7 +190,8 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
       }
       case "pipelet-node": {
         const pipeletName = attrs["pipelet-name"] || "Pipelet";
-        return { type: "pipelet", label: pipeletName, attributes: attrs };
+        const bindings = extractKeyBindings(typeEl);
+        return { type: "pipelet", label: pipeletName, attributes: attrs, bindings };
       }
       case "call-node": {
         const target = attrs["start-name-ref"] || "Call";
@@ -197,7 +204,8 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
       case "interaction-node": {
         const templateEl = findFirstElement(typeEl, (el) => el.tagName === "template");
         const templateName = templateEl?.getAttribute("name") || "Interaction";
-        return { type: "interaction", label: templateName, attributes: attrs };
+        const template = templateEl ? extractTemplateConfig(templateEl) : undefined;
+        return { type: "interaction", label: templateName, attributes: attrs, template };
       }
       case "decision-node": {
         const condition = attrs["condition-key"];
@@ -209,12 +217,13 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
       }
       case "loop-node": {
         const loopLabel = attrs["iterator-key"] || "Loop";
-        return { type: "loop", label: `Loop ${loopLabel}`, attributes: attrs };
+        const bindings = extractKeyBindings(typeEl);
+        return { type: "loop", label: `Loop ${loopLabel}`, attributes: attrs, bindings };
       }
       case "text-node": {
         const text = readFirstChildText(typeEl, "description") || "Text";
         const label = truncate(text, 60);
-        return { type: "text", label, attributes: attrs };
+        return { type: "text", label, attributes: attrs, description: text };
       }
       default: {
         return { type: "unknown", label: typeEl.tagName, attributes: attrs };
@@ -307,4 +316,36 @@ function stripExtension(fileName: string): string {
   }
   const lastDot = parts.lastIndexOf(".");
   return lastDot > 0 ? parts.slice(0, lastDot) : parts;
+}
+
+/**
+ * Extract key-binding elements from a node (used in pipelet-node and loop-node)
+ */
+function extractKeyBindings(parent: Element): KeyBinding[] {
+  const bindings: KeyBinding[] = [];
+  
+  for (const child of getElementChildren(parent, "key-binding")) {
+    const key = child.getAttribute("key");
+    const alias = child.getAttribute("alias");
+    
+    if (key) {
+      bindings.push({
+        key,
+        alias: alias || "",
+      });
+    }
+  }
+  
+  return bindings.length > 0 ? bindings : [];
+}
+
+/**
+ * Extract template configuration from an interaction node
+ */
+function extractTemplateConfig(templateEl: Element): TemplateConfig {
+  return {
+    name: templateEl.getAttribute("name") || "",
+    buffered: templateEl.getAttribute("buffered") === "true",
+    dynamic: templateEl.getAttribute("dynamic") === "true",
+  };
 }

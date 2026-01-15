@@ -87,6 +87,10 @@ export function getLayoutScript(): string {
             label: node.label,
             type: node.type,
             branch: node.branch,
+            attributes: node.attributes || {},
+            bindings: node.bindings || [],
+            template: node.template || null,
+            description: node.description || null,
             x: x,
             y: y
           });
@@ -102,6 +106,10 @@ export function getLayoutScript(): string {
             label: node.label,
             type: node.type,
             branch: node.branch,
+            attributes: node.attributes || {},
+            bindings: node.bindings || [],
+            template: node.template || null,
+            description: node.description || null,
             x: baseX + (i % 5) * horizontalGap,
             y: baseY + Math.floor(i / 5) * verticalGap
           });

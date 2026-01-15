@@ -3,6 +3,7 @@
  */
 
 import { icons } from "../icons";
+import { renderPropertiesPanel } from "./propertiesPanel";
 
 export function renderCanvas(): string {
   return `
@@ -11,6 +12,7 @@ export function renderCanvas(): string {
       <div id="konva-container"></div>
       ${renderZoomControls()}
       ${renderHint()}
+      ${renderPropertiesPanel()}
     </main>
   `;
 }

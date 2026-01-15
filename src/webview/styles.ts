@@ -2,6 +2,8 @@
  * CSS styles for the pipeline visualizer webview
  */
 
+import { getPropertiesPanelStyles } from "./styles/propertiesPanel";
+
 export function getStyles(): string {
   return `
     :root {
@@ -39,6 +41,7 @@ export function getStyles(): string {
     ${getSidebarStyles()}
     ${getCanvasStyles()}
     ${getControlStyles()}
+    ${getPropertiesPanelStyles()}
   `;
 }
 

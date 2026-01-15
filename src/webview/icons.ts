@@ -55,6 +55,25 @@ export const icons = {
   maximize: `<svg ${ICON_ATTRS}>
     <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
   </svg>`,
+
+  info: `<svg ${ICON_ATTRS}>
+    <circle cx="12" cy="12" r="10"/>
+    <line x1="12" y1="16" x2="12" y2="12"/>
+    <line x1="12" y1="8" x2="12.01" y2="8"/>
+  </svg>`,
+
+  close: `<svg ${ICON_ATTRS}>
+    <line x1="18" y1="6" x2="6" y2="18"/>
+    <line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>`,
+
+  pointerClick: `<svg ${ICON_ATTRS}>
+    <path d="M22 14a8 8 0 0 1-8 8"/>
+    <path d="M18 11v-1a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/>
+    <path d="M14 10V9a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v1"/>
+    <path d="M10 9.5V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v10"/>
+    <path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
+  </svg>`,
 } as const;
 
 export type IconName = keyof typeof icons;
