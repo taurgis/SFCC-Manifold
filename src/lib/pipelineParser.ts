@@ -1,5 +1,5 @@
 import { DOMParser } from "@xmldom/xmldom";
-import { ParsedPipeline, PipelineEdge, PipelineNode, PipelineNodeType } from "./types";
+import { BendPoint, ParsedPipeline, PipelineEdge, PipelineNode, PipelineNodeType, TransitionDisplay } from "./types";
 
 export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedPipeline {
   const doc = new DOMParser().parseFromString(xml, "text/xml");
@@ -52,6 +52,9 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
     let lastNodeId: string | undefined;
     let firstNodeId: string | undefined;
     let pendingLabel: string | undefined;
+    let pendingSourceConnector: string | undefined;
+    let pendingTargetConnector: string | undefined;
+    let pendingDisplay: TransitionDisplay | undefined;
     let nodeIndex = 0;
 
     for (const child of getElementChildren(segmentEl)) {
@@ -63,22 +66,49 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
         }
 
         if (lastNodeId) {
-          edges.push({ from: lastNodeId, to: parsed.id, label: pendingLabel });
+          edges.push({
+            from: lastNodeId,
+            to: parsed.id,
+            label: pendingLabel,
+            sourceConnector: pendingSourceConnector,
+            targetConnector: pendingTargetConnector,
+            display: pendingDisplay,
+          });
         }
 
         lastNodeId = parsed.id;
         pendingLabel = undefined;
+        pendingSourceConnector = undefined;
+        pendingTargetConnector = undefined;
+        pendingDisplay = undefined;
       } else if (child.tagName === "simple-transition" || child.tagName === "transition") {
         const label = deriveTransitionLabel(child);
         const targetConnector = child.getAttribute("target-connector");
+        const sourceConnector = child.getAttribute("source-connector");
         const targetPath = child.getAttribute("target-path");
+
+        // Parse transition display (bend points)
+        const transitionDisplay = parseTransitionDisplay(child);
 
         // Check if this is a loop back-edge (transition back to parent loop node)
         if (targetConnector === "loop" && targetPath && parentLoopNodeId && lastNodeId) {
-          edges.push({ from: lastNodeId, to: parentLoopNodeId, label: "loop" });
+          edges.push({
+            from: lastNodeId,
+            to: parentLoopNodeId,
+            label: "loop",
+            sourceConnector: sourceConnector || undefined,
+            targetConnector: targetConnector || undefined,
+            display: transitionDisplay,
+          });
           pendingLabel = undefined;
+          pendingSourceConnector = undefined;
+          pendingTargetConnector = undefined;
+          pendingDisplay = undefined;
         } else {
           pendingLabel = label;
+          pendingSourceConnector = sourceConnector || undefined;
+          pendingTargetConnector = targetConnector || undefined;
+          pendingDisplay = transitionDisplay;
         }
       }
     }
@@ -125,6 +155,11 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
 
       const nestedPath = `${branchPath}/${nestedBranch.getAttribute("basename") || connectorLabel}`;
       
+      // Parse the transition element within the branch for display info
+      const transitionEl = findFirstElement(nestedBranch, (el) => el.tagName === "transition" || el.tagName === "simple-transition");
+      const branchTransitionDisplay = transitionEl ? parseTransitionDisplay(transitionEl) : undefined;
+      const branchTargetConnector = transitionEl?.getAttribute("target-connector") || undefined;
+
       // Pass loop node ID if this is a loop node, so back-edges can reference it
       const branchResult = parseBranchWithEntry(
         nestedBranch,
@@ -133,7 +168,14 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
       );
 
       for (const entry of branchResult.entryIds) {
-        edges.push({ from: id, to: entry, label: connectorLabel });
+        edges.push({
+          from: id,
+          to: entry,
+          label: connectorLabel,
+          sourceConnector: connectorLabel,
+          targetConnector: branchTargetConnector,
+          display: branchTransitionDisplay,
+        });
       }
     }
 
@@ -276,6 +318,34 @@ function deriveTransitionLabel(el: Element): string | undefined {
     el.getAttribute("name") ||
     undefined
   );
+}
+
+/**
+ * Parse transition-display element and extract bend points
+ */
+function parseTransitionDisplay(transitionEl: Element): TransitionDisplay | undefined {
+  const displayEl = findFirstElement(transitionEl, (el) => el.tagName === "transition-display");
+  if (!displayEl) {
+    return undefined;
+  }
+
+  const bendPoints: BendPoint[] = [];
+  
+  for (const child of getElementChildren(displayEl, "bend-point")) {
+    const relativeTo = child.getAttribute("relative-to");
+    const x = readNumberAttr(child, "x");
+    const y = readNumberAttr(child, "y");
+    
+    if ((relativeTo === "source" || relativeTo === "target") && x !== undefined && y !== undefined) {
+      bendPoints.push({
+        relativeTo,
+        x,
+        y,
+      });
+    }
+  }
+
+  return bendPoints.length > 0 ? { bendPoints } : undefined;
 }
 
 function stripExtension(fileName: string): string {

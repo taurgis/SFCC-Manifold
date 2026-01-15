@@ -48,10 +48,33 @@ export interface PipelineNode {
   };
 }
 
+/**
+ * Represents a bend point in a transition line
+ * relative-to specifies whether the offset is relative to source or target node
+ */
+export interface BendPoint {
+  relativeTo: "source" | "target";
+  x: number;
+  y: number;
+}
+
+/**
+ * Represents additional display information for a transition
+ */
+export interface TransitionDisplay {
+  bendPoints: BendPoint[];
+}
+
 export interface PipelineEdge {
   from: string;
   to: string;
   label?: string;
+  /** Source connector name (e.g., 'error', 'yes', 'no') */
+  sourceConnector?: string;
+  /** Target connector name (e.g., 'in', 'in1', 'in2', 'loop') */
+  targetConnector?: string;
+  /** Display information including bend points for line routing */
+  display?: TransitionDisplay;
 }
 
 export interface ParsedPipeline {
