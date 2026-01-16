@@ -44,10 +44,10 @@ export function getMainScript(): string {
       window.pipelineStage = stage;
       window.pipelineLayer = layer;
 
-      // Setup sidebar toggle and get container rect accessor
-      var sidebarControls = setupSidebarToggle(stage, container);
-      var getContainerRect = sidebarControls.getContainerRect;
-      var updateContainerRect = sidebarControls.updateContainerRect;
+      // Setup container tracking for zoom operations
+      var containerTracking = setupContainerTracking(container);
+      var getContainerRect = containerTracking.getContainerRect;
+      var updateContainerRect = containerTracking.updateContainerRect;
 
       // Create draw grid function
       var drawGrid = createDrawGrid(stage, gridLayer, getContainerRect);
@@ -66,6 +66,9 @@ export function getMainScript(): string {
       setupWheelZoom(stage, drawGrid, updateZoomLevel);
       setupZoomButtons(stage, getContainerRect, drawGrid, updateZoomLevel, bounds);
       setupResizeHandler(stage, container, drawGrid, updateContainerRect);
+
+      // Setup floating panels (info and legend)
+      setupFloatingPanels();
 
       // Initialize properties panel
       initPropertiesPanel();

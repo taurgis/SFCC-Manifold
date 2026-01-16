@@ -121,17 +121,81 @@ export function getControlsScript(): string {
     }
 
     /**
-     * Setup sidebar toggle handler
+     * Setup floating panels (info and legend)
      */
-    function setupSidebarToggle(stage, container) {
-      var sidebar = document.getElementById("sidebar");
-      var toggleBtn = document.getElementById("sidebarToggle");
-      var currentContainerRect = container.getBoundingClientRect();
+    function setupFloatingPanels() {
+      var infoPanel = document.getElementById("infoPanel");
+      var legendPanel = document.getElementById("legendPanel");
+      var infoToggle = document.getElementById("infoToggle");
+      var legendToggle = document.getElementById("legendToggle");
+      var infoPanelClose = document.getElementById("infoPanelClose");
+      var legendPanelClose = document.getElementById("legendPanelClose");
 
-      toggleBtn.addEventListener("click", function() {
-        sidebar.classList.toggle("collapsed");
-        toggleBtn.classList.toggle("rotated");
+      function closeAllPanels() {
+        infoPanel.classList.remove("visible");
+        legendPanel.classList.remove("visible");
+        infoToggle.classList.remove("active");
+        legendToggle.classList.remove("active");
+      }
+
+      function togglePanel(panel, toggle, otherPanel, otherToggle) {
+        var isVisible = panel.classList.contains("visible");
+        
+        // Close other panel first
+        otherPanel.classList.remove("visible");
+        otherToggle.classList.remove("active");
+        
+        if (isVisible) {
+          panel.classList.remove("visible");
+          toggle.classList.remove("active");
+        } else {
+          panel.classList.add("visible");
+          toggle.classList.add("active");
+        }
+      }
+
+      infoToggle.addEventListener("click", function() {
+        togglePanel(infoPanel, infoToggle, legendPanel, legendToggle);
       });
+
+      legendToggle.addEventListener("click", function() {
+        togglePanel(legendPanel, legendToggle, infoPanel, infoToggle);
+      });
+
+      infoPanelClose.addEventListener("click", function() {
+        infoPanel.classList.remove("visible");
+        infoToggle.classList.remove("active");
+      });
+
+      legendPanelClose.addEventListener("click", function() {
+        legendPanel.classList.remove("visible");
+        legendToggle.classList.remove("active");
+      });
+
+      // Close panels on escape
+      document.addEventListener("keydown", function(e) {
+        if (e.key === "Escape") {
+          closeAllPanels();
+        }
+      });
+
+      // Close panels when clicking outside
+      document.addEventListener("click", function(e) {
+        var target = e.target;
+        var isInsidePanel = infoPanel.contains(target) || legendPanel.contains(target);
+        var isToggleBtn = infoToggle.contains(target) || legendToggle.contains(target);
+        
+        if (!isInsidePanel && !isToggleBtn) {
+          closeAllPanels();
+        }
+      });
+    }
+
+    /**
+     * Setup container rect tracking for zoom operations
+     */
+    function setupContainerTracking(container) {
+      var currentContainerRect = container.getBoundingClientRect();
 
       function updateContainerRect() {
         currentContainerRect = container.getBoundingClientRect();

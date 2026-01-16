@@ -118,6 +118,7 @@ export function getPropertiesPanelStyles(): string {
       flex: 1;
       overflow-y: auto;
       overflow-x: hidden;
+      padding-bottom: 80px;
     }
 
     /* Empty State */

@@ -17,6 +17,7 @@ export function getSelectionScript(): string {
     function initPropertiesPanel() {
       var panel = document.getElementById("propertiesPanel");
       var closeBtn = document.getElementById("propertiesClose");
+      var content = document.getElementById("propertiesContent");
 
       closeBtn.addEventListener("click", function() {
         hidePropertiesPanel();
@@ -28,6 +29,22 @@ export function getSelectionScript(): string {
         if (e.key === "Escape" && panel.classList.contains("visible")) {
           hidePropertiesPanel();
           clearSelection();
+        }
+      });
+
+      // Event delegation for connection item clicks
+      content.addEventListener("click", function(e) {
+        var target = e.target;
+        // Walk up the DOM tree to find a connection-item
+        while (target && target !== content) {
+          if (target.classList && target.classList.contains("connection-item")) {
+            var nodeId = target.getAttribute("data-node-id");
+            if (nodeId && window.handleConnectionClick) {
+              window.handleConnectionClick(nodeId);
+            }
+            return;
+          }
+          target = target.parentElement;
         }
       });
 
@@ -216,14 +233,16 @@ export function getSelectionScript(): string {
         }
       }
 
+      // Order: Header, then high-priority info (config, bindings, attributes, template, description),
+      // then lower-priority info (connections, location)
       content.innerHTML = renderNodeHeader(node, color) +
-                          renderLocationSection(node) +
-                          renderDescriptionSection(node) +
                           renderConfigPropertiesSection(node) +
                           renderBindingsSection(node) +
+                          renderAttributesSection(node) +
                           renderTemplateSection(node) +
+                          renderDescriptionSection(node) +
                           renderConnectionsSection(incoming, outgoing, node) +
-                          renderAttributesSection(node);
+                          renderLocationSection(node);
     }
 
     /**
@@ -322,7 +341,7 @@ export function getSelectionScript(): string {
       var nodeType = connectedNode ? connectedNode.type : "unknown";
       var nodeId = direction === "incoming" ? edge.from : edge.to;
       
-      return '<div class="connection-item" onclick="handleConnectionClick(\\'' + escapeAttr(nodeId) + '\\')" data-node-id="' + escapeAttr(nodeId) + '">' +
+      return '<div class="connection-item" data-node-id="' + escapeAttr(nodeId) + '">' +
         '<div class="connection-direction ' + direction + '">' +
           dirIcon +
         '</div>' +

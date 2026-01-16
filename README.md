@@ -9,7 +9,8 @@ This project focuses on *reading and understanding* legacy pipelines quickly: op
 - **Custom editor** for pipeline XML (graph view by default for matching files).
 - **Interactive canvas**: drag to pan, scroll/trackpad to zoom, fit/reset controls.
 - **Sidebar** with pipeline metadata (name/group/type/description), node/edge counts, and a legend.
-- **Properties panel** (resizable): click a node or an edge to inspect attributes and connections.
+- **Properties panel** (bottom panel, resizable): click a node or an edge to inspect attributes and connections.
+  - **Improved pipelet properties**: detailed view of pipelet configuration, parameters, and mappings.
 - **Fast navigation**:
 	- Click a connection in the Properties panel to jump to its node.
 	- Double‑click `call`/`jump` nodes to navigate to the referenced start node.
@@ -26,11 +27,11 @@ You can also open any `.xml` file in the visualizer via a command (see below).
 
 ## Commands
 
-- **SFCC Pipeline: Open SFCC Pipeline Visualiser** (`sfccPipelineVisualizer.open`)
+- **SFCC Pipeline: Open SFCC Pipeline Visualiser** (`sfccManifold.open`)
 	- Opens the active XML file (or prompts you to pick one) in the custom editor.
-- **SFCC Pipeline: Open Pipeline Visualizer** (`sfccPipelineVisualizer.openVisualizer`)
+- **SFCC Pipeline: Open Pipeline Visualizer** (`sfccManifold.openVisualizer`)
 	- Opens the currently active text editor document in the visualizer.
-- **SFCC Pipeline: Open Pipeline Source XML** (`sfccPipelineVisualizer.openSource`)
+- **SFCC Pipeline: Open Pipeline Source XML** (`sfccManifold.openSource`)
 	- When you’re viewing the graph, switches that same file back to the default text editor.
 
 ## Pipeline parsing notes

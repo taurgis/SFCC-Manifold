@@ -7,8 +7,7 @@ import * as vscode from "vscode";
 import { ParsedPipeline } from "../lib/types";
 import { createNonce, encodeForScript } from "./helpers";
 import { getStyles } from "./styles";
-import { renderSidebar } from "./templates/sidebar";
-import { renderCanvas } from "./templates/canvas";
+import { renderCanvas, CanvasData } from "./templates/canvas";
 import { getMainScript } from "./scripts";
 
 export interface WebviewContentOptions {
@@ -39,8 +38,7 @@ export function getWebviewContent(options: WebviewContentOptions): string {
     </head>
     <body>
       <div class="app-container">
-        ${renderSidebar({ pipeline, sourcePath })}
-        ${renderCanvas()}
+        ${renderCanvas({ pipeline, sourcePath })}
       </div>
       ${renderScripts(nonce, pipeline, sourcePath, konvaUri)}
     </body>
