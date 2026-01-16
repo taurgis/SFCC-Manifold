@@ -7,7 +7,7 @@
   "publisher": "taurgis",
   "repository": {
     "type": "git",
-    "url": "git@github.com:taurgis/SFCC-Manifold.git"
+    "url": "https://github.com/taurgis/SFCC-Manifold.git"
   },
   "engines": {
     "vscode": "^1.84.0"
@@ -71,12 +71,15 @@
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "compile": "npm run esbuild-base",
+    "watch": "npm run esbuild-base -- --watch",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "vscode:prepublish": "npm run esbuild-base -- --minify"
   },
   "devDependencies": {
     "@types/node": "^20.11.17",
     "@types/vscode": "^1.84.0",
+    "esbuild": "^0.20.0",
     "typescript": "^5.3.3"
   },
   "dependencies": {

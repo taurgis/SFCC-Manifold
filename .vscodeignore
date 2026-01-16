@@ -1,5 +1,7 @@
 src/**
-node_modules/**
 .vscode/**
 .git/**
 **/*.map
+# Include only konva from node_modules
+node_modules/**
+!node_modules/konva/**
