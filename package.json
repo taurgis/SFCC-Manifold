@@ -2,7 +2,7 @@
   "name": "sfcc-manifold",
   "displayName": "SFCC Manifold",
   "description": "Visualise Salesforce Commerce Cloud (Demandware) pipelines as interactive graphs in VS Code.",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "license": "MIT",
   "publisher": "RhinoInquisitor",
   "icon": "docs/images/icon.png",
