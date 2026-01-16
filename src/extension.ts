@@ -21,7 +21,10 @@ class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
     // Setup webview options
     webviewPanel.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "node_modules")],
+      localResourceRoots: [
+        vscode.Uri.joinPath(this.context.extensionUri, "node_modules"),
+        vscode.Uri.joinPath(this.context.extensionUri, "dist"),
+      ],
     };
 
     // Initial render

@@ -8,26 +8,31 @@ import { ParsedPipeline } from "../lib/types";
 import { createNonce, encodeForScript } from "./helpers";
 import { getStyles } from "./styles";
 import { renderCanvas, CanvasData } from "./templates/canvas";
-import { getMainScript } from "./scripts";
 
 export interface WebviewContentOptions {
   webview: vscode.Webview;
   pipeline: ParsedPipeline;
   sourceUri: vscode.Uri;
   extensionUri: vscode.Uri;
+  initialStartNode?: string;
 }
 
 /**
  * Generate the complete webview HTML content
  */
 export function getWebviewContent(options: WebviewContentOptions): string {
-  const { webview, pipeline, sourceUri, extensionUri } = options;
+  const { webview, pipeline, sourceUri, extensionUri, initialStartNode } = options;
   const nonce = createNonce();
   const sourcePath = sourceUri.fsPath;
 
   // Get URI to local Konva script
   const konvaUri = webview.asWebviewUri(
     vscode.Uri.joinPath(extensionUri, "node_modules", "konva", "konva.min.js")
+  ).toString();
+
+  // Get URI to bundled webview script
+  const webviewScriptUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "dist", "webview.js")
   ).toString();
 
   return `<!DOCTYPE html>
@@ -40,7 +45,7 @@ export function getWebviewContent(options: WebviewContentOptions): string {
       <div class="app-container">
         ${renderCanvas({ pipeline, sourcePath })}
       </div>
-      ${renderScripts(nonce, pipeline, sourcePath, konvaUri)}
+      ${renderScripts(nonce, pipeline, sourcePath, konvaUri, webviewScriptUri, initialStartNode)}
     </body>
   </html>`;
 }
@@ -63,17 +68,21 @@ function renderScripts(
   nonce: string,
   pipeline: ParsedPipeline,
   sourcePath: string,
-  konvaUri: string
+  konvaUri: string,
+  webviewScriptUri: string,
+  initialStartNode?: string
 ): string {
   const encodedData = encodeForScript(pipeline);
   const encodedPath = encodeForScript(sourcePath);
+  const encodedStartNode = initialStartNode ? encodeForScript(initialStartNode) : "null";
 
   return `
     <script src="${konvaUri}" nonce="${nonce}"></script>
     <script nonce="${nonce}">
-      const pipelineData = ${encodedData};
-      const sourceLabel = ${encodedPath};
+      window.pipelineData = ${encodedData};
+      window.sourceLabel = ${encodedPath};
+      window.initialStartNode = ${encodedStartNode};
     </script>
-    <script nonce="${nonce}">${getMainScript()}</script>
+    <script src="${webviewScriptUri}" nonce="${nonce}"></script>
   `;
 }

@@ -86,10 +86,11 @@
     }
   },
   "scripts": {
-    "compile": "npm run esbuild-base",
-    "watch": "npm run esbuild-base -- --watch",
-    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
-    "vscode:prepublish": "npm run esbuild-base -- --minify"
+    "compile": "npm run esbuild-extension && npm run esbuild-webview",
+    "watch": "npm run esbuild-extension -- --watch & npm run esbuild-webview -- --watch",
+    "esbuild-extension": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "esbuild-webview": "esbuild ./src/webview-ui/main.ts --bundle --outfile=dist/webview.js --format=iife --platform=browser --alias:konva=./src/webview-ui/konva-shim.ts --target=es2020",
+    "vscode:prepublish": "npm run esbuild-extension -- --minify && npm run esbuild-webview -- --minify"
   },
   "devDependencies": {
     "@types/node": "^20.11.17",
