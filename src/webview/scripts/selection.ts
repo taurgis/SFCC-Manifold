@@ -123,22 +123,88 @@ export function getSelectionScript(): string {
 
     /**
      * Update node visual state (selected/unselected)
+     * When selected: fills node with type color and inverts text for readability
      */
     function updateNodeVisual(nodeId, isSelected) {
       var group = nodeGroups[nodeId];
       if (!group) return;
 
+      // Get the node data to access its color
+      var nodeData = findNodeById(nodeId);
+      var nodeColor = nodeData ? (colors[nodeData.type] || colors.unknown) : colors.unknown;
+
       // Try to find Rect first (for regular nodes)
-      var rect = group.findOne("Rect");
-      if (rect) {
+      var rects = group.find("Rect");
+      if (rects && rects.length > 0) {
+        // First rect is the main background
+        var mainRect = rects[0];
+        
         if (isSelected) {
-          rect.strokeWidth(3);
-          rect.shadowBlur(30);
-          rect.shadowOpacity(0.8);
+          // Fill with node type color
+          mainRect.fill(nodeColor);
+          mainRect.stroke("#ffffff");
+          mainRect.strokeWidth(3);
+          mainRect.shadowBlur(30);
+          mainRect.shadowOpacity(0.8);
+          mainRect.shadowColor(nodeColor);
+          
+          // Hide the gradient overlay (second rect)
+          if (rects[1]) {
+            rects[1].opacity(0);
+          }
+          
+          // Invert text colors for readability
+          var texts = group.find("Text");
+          for (var i = 0; i < texts.length; i++) {
+            var text = texts[i];
+            // Store original color if not already stored
+            if (!text.getAttr("originalFill")) {
+              text.setAttr("originalFill", text.fill());
+            }
+            // Type pill text stays dark, other text becomes dark for contrast
+            text.fill("#0b1021");
+          }
+          
+          // Update type pill background to white for contrast
+          var pillRect = rects[2]; // Third rect is the pill background
+          if (pillRect) {
+            if (!pillRect.getAttr("originalFill")) {
+              pillRect.setAttr("originalFill", pillRect.fill());
+            }
+            pillRect.fill("rgba(255, 255, 255, 0.9)");
+          }
         } else {
-          rect.strokeWidth(2);
-          rect.shadowBlur(15);
-          rect.shadowOpacity(0.4);
+          // Restore original appearance
+          mainRect.fill("#0d1328");
+          mainRect.stroke(nodeColor);
+          mainRect.strokeWidth(2);
+          mainRect.shadowBlur(15);
+          mainRect.shadowOpacity(0.4);
+          mainRect.shadowColor("#000");
+          
+          // Show the gradient overlay again
+          if (rects[1]) {
+            rects[1].opacity(1);
+          }
+          
+          // Restore text colors
+          var texts = group.find("Text");
+          for (var i = 0; i < texts.length; i++) {
+            var text = texts[i];
+            var originalFill = text.getAttr("originalFill");
+            if (originalFill) {
+              text.fill(originalFill);
+            }
+          }
+          
+          // Restore pill background
+          var pillRect = rects[2];
+          if (pillRect) {
+            var originalPillFill = pillRect.getAttr("originalFill");
+            if (originalPillFill) {
+              pillRect.fill(originalPillFill);
+            }
+          }
         }
         return;
       }
@@ -146,18 +212,26 @@ export function getSelectionScript(): string {
       // Try to find Circle (for join nodes)
       var circles = group.find("Circle");
       if (circles && circles.length > 0) {
-        // Find the main circle (the one with stroke, not fill-only)
+        // Find the main circle (the one with stroke)
         for (var i = 0; i < circles.length; i++) {
           var circle = circles[i];
           if (circle.strokeWidth() > 0) {
             if (isSelected) {
+              // Fill with node type color
+              circle.fill(nodeColor);
+              circle.stroke("#ffffff");
               circle.strokeWidth(4);
               circle.shadowBlur(20);
               circle.shadowOpacity(0.8);
+              circle.shadowColor(nodeColor);
             } else {
-              circle.strokeWidth(3);
+              // Restore original appearance
+              circle.fill("#0d1328");
+              circle.stroke(nodeColor);
+              circle.strokeWidth(2);
               circle.shadowBlur(10);
-              circle.shadowOpacity(0.5);
+              circle.shadowOpacity(0.4);
+              circle.shadowColor("#000");
             }
             break;
           }
