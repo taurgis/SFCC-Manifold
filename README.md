@@ -1,5 +1,7 @@
 # SFCC Manifold
 
+[![GitHub](https://img.shields.io/badge/GitHub-taurgis%2FSFCC--Manifold-blue?logo=github)](https://github.com/taurgis/SFCC-Manifold)
+
 VS Code extension that visualizes Salesforce B2C Commerce (Demandware) **pipeline XML** as an interactive graph.
 
 This project focuses on *reading and understanding* legacy pipelines quickly: open a pipeline file, pan/zoom around the graph, click nodes/edges to inspect details, and follow `call-node` / `jump-node` links across pipelines.
@@ -27,11 +29,11 @@ You can also open any `.xml` file in the visualizer via a command (see below).
 
 ## Commands
 
-- **SFCC Pipeline: Open SFCC Pipeline Visualiser** (`sfccManifold.open`)
+- **SFCC Manifold: Open SFCC Pipeline Visualiser** (`sfccManifold.open`)
 	- Opens the active XML file (or prompts you to pick one) in the custom editor.
-- **SFCC Pipeline: Open Pipeline Visualizer** (`sfccManifold.openVisualizer`)
+- **SFCC Manifold: Open Pipeline Visualizer** (`sfccManifold.openVisualizer`)
 	- Opens the currently active text editor document in the visualizer.
-- **SFCC Pipeline: Open Pipeline Source XML** (`sfccManifold.openSource`)
+- **SFCC Manifold: Open Pipeline Source XML** (`sfccManifold.openSource`)
 	- When you’re viewing the graph, switches that same file back to the default text editor.
 
 ## Pipeline parsing notes

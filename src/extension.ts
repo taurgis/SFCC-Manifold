@@ -9,7 +9,7 @@ const documentWebviews = new Map<string, vscode.WebviewPanel>();
  * Custom editor provider for SFCC Pipeline files
  */
 class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
-  public static readonly viewType = "sfccPipelineVisualizer.pipelineEditor";
+  public static readonly viewType = "sfccManifold.pipelineEditor";
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -203,7 +203,7 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  const disposable = vscode.commands.registerCommand("sfccPipelineVisualizer.open", async (uri?: vscode.Uri) => {
+  const disposable = vscode.commands.registerCommand("sfccManifold.open", async (uri?: vscode.Uri) => {
     const targetUri = uri || guessActivePipeline() || (await promptForPipelineFile());
     if (!targetUri) {
       vscode.window.showWarningMessage("Select a pipeline XML file to visualise.");
@@ -219,7 +219,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Command to open the source XML
   const openSourceCommand = vscode.commands.registerCommand(
-    "sfccPipelineVisualizer.openSource",
+    "sfccManifold.openSource",
     async () => {
       const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
       if (activeTab?.input && typeof activeTab.input === "object" && "uri" in activeTab.input) {
@@ -232,7 +232,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Command to open the visualizer from text editor
   const openVisualizerFromTextCommand = vscode.commands.registerCommand(
-    "sfccPipelineVisualizer.openVisualizer",
+    "sfccManifold.openVisualizer",
     async () => {
       const editor = vscode.window.activeTextEditor;
       if (editor) {
