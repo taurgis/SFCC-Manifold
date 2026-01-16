@@ -2,9 +2,10 @@
   "name": "sfcc-manifold",
   "displayName": "SFCC Manifold",
   "description": "Visualise Salesforce Commerce Cloud (Demandware) pipelines as interactive graphs in VS Code.",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "license": "MIT",
-  "publisher": "taurgis",
+  "publisher": "RhinoInquisitor",
+  "icon": "docs/images/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/taurgis/SFCC-Manifold.git"
@@ -13,7 +14,21 @@
     "vscode": "^1.84.0"
   },
   "categories": [
+    "Visualization",
+    "Programming Languages",
+    "Debuggers",
     "Other"
+  ],
+  "keywords": [
+    "SFCC",
+    "Salesforce Commerce Cloud",
+    "Demandware",
+    "Pipeline",
+    "Pipelines",
+    "B2C Commerce",
+    "eCommerce",
+    "Visualizer",
+    "XML"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [

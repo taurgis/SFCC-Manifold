@@ -119,8 +119,8 @@ export function getCanvasScript(): string {
         // Reset arrow to original color
         var arrowLine = group.findOne(".edge-arrow");
         if (arrowLine) {
+          arrowLine.fill(originalColor);
           arrowLine.stroke(originalColor);
-          arrowLine.strokeWidth(2);
         }
         
         // Reset label text
@@ -165,8 +165,8 @@ export function getCanvasScript(): string {
       // Highlight arrow
       var arrowLine = group.findOne(".edge-arrow");
       if (arrowLine) {
+        arrowLine.fill(highlightColor);
         arrowLine.stroke(highlightColor);
-        arrowLine.strokeWidth(3);
       }
       
       // Highlight label
@@ -835,27 +835,32 @@ export function getCanvasScript(): string {
         });
         edgeGroup.add(visibleLine);
 
-        // Arrow head at the end point
-        var arrowSize = 10;
-        var x2a = end.x;
-        var y2a = end.y;
-        var arrowLine = new Konva.Line({
+        // Arrow head at the entry point - filled triangle pointing in the direction of flow
+        // Position arrow BEFORE the node entry point (offset backward along the incoming line)
+        var arrowOffset = 12;
+        // Add offset in the opposite direction of flow (where the line came from)
+        var arrowX = end.x + arrowOffset * Math.cos(arrowAngle);
+        var arrowY = end.y + arrowOffset * Math.sin(arrowAngle);
+        
+        // Convert arrowAngle to rotation for Konva.RegularPolygon
+        // arrowAngle represents the direction the line is GOING INTO the node
+        // RegularPolygon with sides=3: rotation 0=pointing up, 90=right, 180=down, 270=left
+        // We want the arrow to point in the direction of flow (INTO the node)
+        var rotationDegrees = (arrowAngle * 180 / Math.PI) - 90;
+        
+        var arrowHead = new Konva.RegularPolygon({
           name: "edge-arrow",
-          points: [
-            x2a - arrowSize * Math.cos(arrowAngle - Math.PI / 6),
-            y2a - arrowSize * Math.sin(arrowAngle - Math.PI / 6),
-            x2a,
-            y2a,
-            x2a - arrowSize * Math.cos(arrowAngle + Math.PI / 6),
-            y2a - arrowSize * Math.sin(arrowAngle + Math.PI / 6)
-          ],
+          x: arrowX,
+          y: arrowY,
+          sides: 3,
+          radius: 5,
+          fill: edgeColor,
           stroke: edgeColor,
-          strokeWidth: 2,
-          lineCap: "round",
-          lineJoin: "round",
+          strokeWidth: 1,
+          rotation: rotationDegrees,
           listening: false
         });
-        edgeGroup.add(arrowLine);
+        edgeGroup.add(arrowHead);
 
         // Label placement: use midpoint with slight nudge based on primary direction
         if (edge.label) {

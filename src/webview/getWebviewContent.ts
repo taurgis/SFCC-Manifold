@@ -28,7 +28,7 @@ export function getWebviewContent(options: WebviewContentOptions): string {
   // Get URI to local Konva script
   const konvaUri = webview.asWebviewUri(
     vscode.Uri.joinPath(extensionUri, "node_modules", "konva", "konva.min.js")
-  );
+  ).toString();
 
   return `<!DOCTYPE html>
   <html lang="en">
@@ -63,7 +63,7 @@ function renderScripts(
   nonce: string,
   pipeline: ParsedPipeline,
   sourcePath: string,
-  konvaUri: vscode.Uri
+  konvaUri: string
 ): string {
   const encodedData = encodeForScript(pipeline);
   const encodedPath = encodeForScript(sourcePath);
