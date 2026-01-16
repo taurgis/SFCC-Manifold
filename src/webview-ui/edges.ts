@@ -16,9 +16,9 @@ import {
 } from "./state";
 import { clearSelection } from "./selection";
 import { showPropertiesPanel, renderEdgeProperties } from "./properties";
-import type { PlacedNode, PipelineEdge, Point } from "./types";
+import type { PlacedNode, PipelineEdge, Point, BendPoint } from "./types";
 
-const { nodeWidth, nodeHeight } = LAYOUT_CONFIG;
+const { nodeWidth, nodeHeight, horizontalGap, verticalGap } = LAYOUT_CONFIG;
 
 /**
  * Normalize edge label for comparison
@@ -34,6 +34,72 @@ function normalizeLabel(label: string | null | undefined): string {
 function isErrorEdge(label: string | null | undefined): boolean {
   const l = normalizeLabel(label);
   return l === "error" || l.indexOf("error") !== -1 || l === "pipelet_error";
+}
+
+/**
+ * Infer exit side from XML bendpoints
+ * Returns the side if it can be inferred, null otherwise
+ */
+function inferExitSideFromBendpoints(bendPoints: BendPoint[] | undefined): string | null {
+  if (!bendPoints || bendPoints.length === 0) return null;
+  
+  // Look for source-relative bendpoint
+  const sourceBend = bendPoints.find(bp => bp.relativeTo === "source");
+  if (!sourceBend) return null;
+  
+  // x > 0 means go right, x < 0 means go left
+  // y > 0 means go down, y < 0 means go up
+  // The primary direction determines exit side
+  
+  const absX = Math.abs(sourceBend.x);
+  const absY = Math.abs(sourceBend.y);
+  
+  if (absX > absY) {
+    // Primarily horizontal movement
+    return sourceBend.x > 0 ? "right" : "left";
+  } else if (absY > absX) {
+    // Primarily vertical movement
+    return sourceBend.y > 0 ? "bottom" : "top";
+  } else if (absX > 0) {
+    // Equal but non-zero, prefer horizontal for error/branch edges
+    return sourceBend.x > 0 ? "right" : "left";
+  }
+  
+  return null;
+}
+
+/**
+ * Infer entry side from XML bendpoints
+ * Returns the side if it can be inferred, null otherwise
+ */
+function inferEntrySideFromBendpoints(bendPoints: BendPoint[] | undefined): string | null {
+  if (!bendPoints || bendPoints.length === 0) return null;
+  
+  // Look for target-relative bendpoint
+  const targetBend = bendPoints.find(bp => bp.relativeTo === "target");
+  if (!targetBend) return null;
+  
+  // The direction TO the target determines entry side
+  // x > 0 means coming from left (entering right side)
+  // x < 0 means coming from right (entering left side)
+  // y > 0 means coming from above (entering bottom side)
+  // y < 0 means coming from below (entering top side)
+  
+  const absX = Math.abs(targetBend.x);
+  const absY = Math.abs(targetBend.y);
+  
+  if (absX > absY) {
+    // Primarily horizontal approach
+    return targetBend.x > 0 ? "right" : "left";
+  } else if (absY > absX) {
+    // Primarily vertical approach
+    return targetBend.y > 0 ? "bottom" : "top";
+  } else if (absY > 0) {
+    // Equal but non-zero, prefer vertical for standard entry
+    return targetBend.y > 0 ? "bottom" : "top";
+  }
+  
+  return null;
 }
 
 /**
@@ -125,6 +191,7 @@ function lineIntersectsNode(
 
 /**
  * Determine exit and entry sides for an edge
+ * Priority: 1) XML bendpoints, 2) Smart routing based on positions, 3) Connector hints
  */
 function determineSides(
   edge: PipelineEdge,
@@ -139,6 +206,13 @@ function determineSides(
 
   const sourceConn = (edge.sourceConnector || "").toLowerCase();
   const targetConn = (edge.targetConnector || "").toLowerCase();
+  
+  // Get bendpoints from edge display data
+  const bendPoints = edge.display?.bendPoints;
+  
+  // First, check if bendpoints provide explicit routing hints
+  const bendExitSide = inferExitSideFromBendpoints(bendPoints);
+  const bendEntrySide = inferEntrySideFromBendpoints(bendPoints);
 
   let outSide = "bottom";
   let inSide = "top";
@@ -146,11 +220,11 @@ function determineSides(
   const targetToRight = dx > nodeWidth * 0.3;
   const targetToLeft = dx < -nodeWidth * 0.3;
   const targetDirectlyBelow = Math.abs(dx) < nodeWidth * 0.5 && dy > 0;
+  const targetAbove = dy < -nodeHeight * 0.3;
+  const targetBelow = dy > nodeHeight * 0.3;
 
   let cellBelowEmpty = true;
   let blockingNode: PlacedNode | null = null;
-  const sourceToRightOfTarget = dx < -nodeWidth * 0.8;
-  const sourceToLeftOfTarget = dx > nodeWidth * 0.8;
 
   if (nodeMap) {
     const sourceBottomY = fromNode.y + nodeHeight;
@@ -175,8 +249,14 @@ function determineSides(
     }
   }
 
-  // Source connector determines exit side
-  if (sourceConn === "error" || sourceConn === "pipelet_error" || isError) {
+  // ===== DETERMINE EXIT SIDE =====
+  
+  // Priority 1: Bendpoints take precedence (XML-defined routing)
+  if (bendExitSide) {
+    outSide = bendExitSide;
+  }
+  // Priority 2: Source connector type (error, yes, no)
+  else if (sourceConn === "error" || sourceConn === "pipelet_error" || isError) {
     outSide = "right";
   } else if (sourceConn === "yes" || sourceConn === "true") {
     if (targetDirectlyBelow && cellBelowEmpty) {
@@ -190,79 +270,153 @@ function determineSides(
     } else {
       outSide = "left";
     }
-  } else {
+  }
+  // Priority 3: Smart routing based on relative positions
+  else {
     if (!cellBelowEmpty) {
       if (targetToLeft) {
         outSide = "left";
-        inSide = "right";
       } else if (targetToRight) {
         outSide = "right";
-        inSide = "left";
       } else {
         outSide = "left";
-        inSide = "left";
       }
     }
   }
 
-  // Target connector determines entry side
-  const targetOnSameRow = Math.abs(dy) < nodeHeight * 0.5;
-  const targetDirectlyToRight = targetToRight && targetOnSameRow;
-  const targetDirectlyToLeft = targetToLeft && targetOnSameRow;
+  // ===== DETERMINE ENTRY SIDE =====
+  
+  // Priority 1: Bendpoints take precedence (XML-defined routing)
+  if (bendEntrySide) {
+    inSide = bendEntrySide;
+  }
+  // Priority 2: Smart routing based on exit side, positions, and node types
+  else {
+    const targetOnSameRow = Math.abs(dy) < nodeHeight * 0.5;
+    const targetDirectlyToRight = targetToRight && targetOnSameRow;
+    const targetDirectlyToLeft = targetToLeft && targetOnSameRow;
+    const sourceToRightOfTarget = dx < -nodeWidth * 0.8;
+    const sourceToLeftOfTarget = dx > nodeWidth * 0.8;
+    
+    // Check if horizontal routing is clearly better (target primarily to the side)
+    // This handles cases where target is not on exact same row but is more horizontal than vertical
+    const horizontalDistance = Math.abs(dx);
+    const verticalDistance = Math.abs(dy);
+    const targetPrimarilyToSide = horizontalDistance > verticalDistance * 0.8 && horizontalDistance > nodeWidth * 0.5;
+    
+    // For join nodes, prefer entry from the direction of approach
+    const isJoinTarget = toNode.type === "join";
 
-  if (outSide === "right" && targetDirectlyToRight) {
-    inSide = "left";
-  } else if (outSide === "left" && targetDirectlyToLeft) {
-    inSide = "right";
-  } else if (outSide === "bottom" && targetOnSameRow) {
-    if (targetToRight) {
-      outSide = "right";
-      inSide = "left";
-    } else if (targetToLeft) {
-      outSide = "left";
-      inSide = "right";
-    }
-  } else if (outSide === "bottom" && sourceToRightOfTarget) {
-    inSide = "right";
-  } else if (outSide === "bottom" && sourceToLeftOfTarget) {
-    inSide = "left";
-  } else if (blockingNode) {
-    // Keep the inSide we set during blocker detection
-  } else if (
-    targetConn === "in" ||
-    targetConn === "in1" ||
-    targetConn === "in2"
-  ) {
-    inSide = "top";
-  } else if (targetConn === "loop") {
-    inSide = "top";
-  } else if (targetConn === "left") {
-    inSide = "left";
-  } else if (targetConn === "right") {
-    inSide = "right";
-  } else if (targetConn === "bottom") {
-    inSide = "bottom";
-  } else if (targetConn) {
-    inSide = "top";
-  } else {
-    if (outSide === "right") {
-      if (targetToRight) {
-        inSide = "left";
+    // For join nodes, always determine entry based on approach direction
+    if (isJoinTarget) {
+      // Determine which direction is dominant
+      const verticalDominant = verticalDistance > horizontalDistance * 1.2;
+      const horizontalDominant = horizontalDistance > verticalDistance * 1.2;
+      
+      if (horizontalDominant || (targetOnSameRow && targetPrimarilyToSide)) {
+        // Approaching more from the side - use horizontal entry
+        if (targetToRight || dx > 0) {
+          inSide = "left";
+          if (outSide === "bottom") outSide = "right";
+        } else if (targetToLeft || dx < 0) {
+          inSide = "right";
+          if (outSide === "bottom") outSide = "left";
+        } else {
+          inSide = "top";
+        }
+      } else if (verticalDominant || targetBelow) {
+        // Vertical is dominant - enter from top (if target below) or bottom (if target above)
+        if (targetBelow || dy > 0) {
+          inSide = "top";
+        } else {
+          inSide = "bottom";
+        }
+      } else if (Math.abs(dx) < nodeWidth * 0.3) {
+        // Target is nearly aligned - enter from top/bottom
+        inSide = dy > 0 ? "top" : "bottom";
       } else {
-        inSide = "top";
+        // Mixed case - use side based on dx
+        if (dx > 0) {
+          inSide = "left";
+        } else {
+          inSide = "right";
+        }
       }
-    } else if (outSide === "left") {
+    }
+    // Non-join targets
+    else if (outSide === "right" && targetDirectlyToRight) {
+      inSide = "left";
+    } else if (outSide === "left" && targetDirectlyToLeft) {
+      inSide = "right";
+    } else if (outSide === "bottom" && targetOnSameRow) {
+      if (targetToRight) {
+        outSide = "right";
+        inSide = "left";
+      } else if (targetToLeft) {
+        outSide = "left";
+        inSide = "right";
+      }
+    } else if (outSide === "bottom" && targetPrimarilyToSide && !blockingNode) {
+      // Target is more to the side than below - use horizontal routing
+      if (targetToRight) {
+        outSide = "right";
+        inSide = "left";
+      } else if (targetToLeft) {
+        outSide = "left";
+        inSide = "right";
+      }
+    } else if (outSide === "bottom" && sourceToRightOfTarget) {
+      inSide = "right";
+    } else if (outSide === "bottom" && sourceToLeftOfTarget) {
+      inSide = "left";
+    } else if (blockingNode) {
+      // Keep the default or connector-based inSide
       if (targetToLeft) {
         inSide = "right";
+      } else if (targetToRight) {
+        inSide = "left";
       } else {
-        inSide = "top";
+        inSide = "left";
+      }
+    }
+    // Priority 3: Target connector hints
+    else if (targetConn === "in" || targetConn === "in1" || targetConn === "in2") {
+      inSide = "top";
+    } else if (targetConn === "loop") {
+      inSide = "top";
+    } else if (targetConn === "left") {
+      inSide = "left";
+    } else if (targetConn === "right") {
+      inSide = "right";
+    } else if (targetConn === "bottom") {
+      inSide = "bottom";
+    } else if (targetConn) {
+      inSide = "top";
+    }
+    // Smart defaults based on exit side
+    else {
+      if (outSide === "right") {
+        if (targetToRight) {
+          inSide = "left";
+        } else if (targetAbove) {
+          inSide = "bottom";
+        } else {
+          inSide = "top";
+        }
+      } else if (outSide === "left") {
+        if (targetToLeft) {
+          inSide = "right";
+        } else if (targetAbove) {
+          inSide = "bottom";
+        } else {
+          inSide = "top";
+        }
       }
     }
   }
 
-  // Handle back edges (target above source)
-  const targetAbove = dy < -nodeHeight * 0.3;
-  if (targetAbove) {
+  // Handle back edges (target above source) - but respect bendpoints
+  if (targetAbove && !bendExitSide && !bendEntrySide) {
     if (outSide === "bottom") outSide = "top";
     if ((outSide === "right" || outSide === "left") && inSide === "top") {
       inSide = "bottom";
@@ -327,11 +481,12 @@ function buildBackEdgePath(
 
 /**
  * Build orthogonal path between points
+ * Uses XML bendpoints when available, otherwise falls back to smart routing
  */
 function buildOrthogonalPath(
   start: Point,
   end: Point,
-  _bendPoints: unknown[] | null,
+  bendPoints: BendPoint[] | null | undefined,
   fromNode: PlacedNode,
   toNode: PlacedNode,
   outSide: string,
@@ -345,86 +500,229 @@ function buildOrthogonalPath(
   const dx = end.x - start.x;
   const dy = end.y - start.y;
 
-  if (outSide === "bottom" && inSide === "top") {
-    routeBottomToTop(points, start, end, dx, dy, fromNode, toNode, nodeMap);
-  } else if (outSide === "right" && inSide === "top") {
-    routeRightToTop(
-      points,
-      start,
-      end,
-      dy,
-      startOffset,
-      toNode,
-      nodeMap,
-      blockingNode
-    );
-  } else if (outSide === "left" && inSide === "top") {
-    routeLeftToTop(
-      points,
-      start,
-      end,
-      dx,
-      dy,
-      startOffset,
-      toNode,
-      nodeMap,
-      blockingNode
-    );
-  } else if (outSide === "left" && inSide === "left") {
-    routeLeftToLeft(
-      points,
-      start,
-      end,
-      dy,
-      startOffset,
-      toNode,
-      blockingNode
-    );
-  } else if (outSide === "bottom" && inSide === "right") {
-    routeBottomToRight(points, start, end);
-  } else if (outSide === "bottom" && inSide === "left") {
-    routeBottomToLeft(points, start, end);
-  } else if (outSide === "right" && inSide === "bottom") {
-    routeRightToBottom(points, start, end, fromNode, toNode, nodeMap);
-  } else if (outSide === "left" && inSide === "bottom") {
-    routeLeftToBottom(points, start, end, fromNode, toNode, nodeMap);
-  } else if (outSide === "right" && inSide === "left") {
-    routeRightToLeft(
-      points,
-      start,
-      end,
-      dy,
-      startOffset,
-      endOffset,
-      fromNode,
-      toNode,
-      nodeMap
-    );
-  } else if (outSide === "left" && inSide === "right") {
-    routeLeftToRight(
-      points,
-      start,
-      end,
-      dy,
-      startOffset,
-      endOffset,
-      fromNode,
-      toNode,
-      nodeMap
-    );
-  } else if (outSide === "top" && inSide === "bottom") {
-    routeTopToBottom(points, start, end, dx, startOffset, endOffset);
-  } else if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-    if (outSide === "right" || outSide === "left") {
-      points.push(end.x, start.y);
-    } else {
-      points.push(start.x, end.y);
+  // Check if we have bendpoints that suggest specific waypoints
+  const hasBendPoints = bendPoints && bendPoints.length > 0;
+  
+  if (hasBendPoints) {
+    // Use bendpoints to guide routing
+    const sourceBend = bendPoints!.find(bp => bp.relativeTo === "source");
+    const targetBend = bendPoints!.find(bp => bp.relativeTo === "target");
+    
+    // Convert grid-based bendpoints to pixel waypoints
+    if (sourceBend && targetBend) {
+      // Calculate waypoint from source bendpoint
+      const sourceWaypointX = fromNode.x + nodeWidth / 2 + sourceBend.x * horizontalGap;
+      const sourceWaypointY = fromNode.y + nodeHeight / 2 + sourceBend.y * verticalGap;
+      
+      // Calculate waypoint from target bendpoint  
+      const targetWaypointX = toNode.x + nodeWidth / 2 + targetBend.x * horizontalGap;
+      const targetWaypointY = toNode.y + nodeHeight / 2 + targetBend.y * verticalGap;
+      
+      // Build path using waypoints with orthogonal routing
+      buildBendpointPath(points, start, end, sourceWaypointX, sourceWaypointY, 
+                         targetWaypointX, targetWaypointY, outSide, inSide);
+    } else if (sourceBend) {
+      // Only source bendpoint - route through it
+      const waypointX = fromNode.x + nodeWidth / 2 + sourceBend.x * horizontalGap;
+      const waypointY = fromNode.y + nodeHeight / 2 + sourceBend.y * verticalGap;
+      buildSingleWaypointPath(points, start, end, waypointX, waypointY, outSide, inSide);
+    } else if (targetBend) {
+      // Only target bendpoint - approach from that direction
+      const waypointX = toNode.x + nodeWidth / 2 + targetBend.x * horizontalGap;
+      const waypointY = toNode.y + nodeHeight / 2 + targetBend.y * verticalGap;
+      buildSingleWaypointPath(points, start, end, waypointX, waypointY, outSide, inSide);
+    }
+  } else {
+    // Fallback to standard routing
+    if (outSide === "bottom" && inSide === "top") {
+      routeBottomToTop(points, start, end, dx, dy, fromNode, toNode, nodeMap);
+    } else if (outSide === "right" && inSide === "top") {
+      routeRightToTop(
+        points,
+        start,
+        end,
+        dy,
+        startOffset,
+        toNode,
+        nodeMap,
+        blockingNode
+      );
+    } else if (outSide === "left" && inSide === "top") {
+      routeLeftToTop(
+        points,
+        start,
+        end,
+        dx,
+        dy,
+        startOffset,
+        toNode,
+        nodeMap,
+        blockingNode
+      );
+    } else if (outSide === "left" && inSide === "left") {
+      routeLeftToLeft(
+        points,
+        start,
+        end,
+        dy,
+        startOffset,
+        toNode,
+        blockingNode
+      );
+    } else if (outSide === "bottom" && inSide === "right") {
+      routeBottomToRight(points, start, end);
+    } else if (outSide === "bottom" && inSide === "left") {
+      routeBottomToLeft(points, start, end);
+    } else if (outSide === "right" && inSide === "bottom") {
+      routeRightToBottom(points, start, end, fromNode, toNode, nodeMap);
+    } else if (outSide === "left" && inSide === "bottom") {
+      routeLeftToBottom(points, start, end, fromNode, toNode, nodeMap);
+    } else if (outSide === "right" && inSide === "left") {
+      routeRightToLeft(
+        points,
+        start,
+        end,
+        dy,
+        startOffset,
+        endOffset,
+        fromNode,
+        toNode,
+        nodeMap
+      );
+    } else if (outSide === "left" && inSide === "right") {
+      routeLeftToRight(
+        points,
+        start,
+        end,
+        dy,
+        startOffset,
+        endOffset,
+        fromNode,
+        toNode,
+        nodeMap
+      );
+    } else if (outSide === "top" && inSide === "bottom") {
+      routeTopToBottom(points, start, end, dx, startOffset, endOffset);
+    } else if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      if (outSide === "right" || outSide === "left") {
+        points.push(end.x, start.y);
+      } else {
+        points.push(start.x, end.y);
+      }
     }
   }
 
   points.push(end.x, end.y);
   ensureMinFinalSegment(points);
   return points;
+}
+
+/**
+ * Build path through source and target waypoints using orthogonal segments
+ */
+function buildBendpointPath(
+  points: number[],
+  start: Point,
+  end: Point,
+  srcWpX: number,
+  srcWpY: number,
+  tgtWpX: number,
+  tgtWpY: number,
+  outSide: string,
+  inSide: string
+): void {
+  // Exit horizontally or vertically based on outSide
+  if (outSide === "right" || outSide === "left") {
+    // First segment: horizontal from start
+    points.push(srcWpX, start.y);
+    // Second segment: vertical to target approach height
+    points.push(srcWpX, tgtWpY);
+    // Third segment: horizontal to target x
+    if (Math.abs(srcWpX - end.x) > 5) {
+      points.push(end.x, tgtWpY);
+    }
+  } else {
+    // First segment: vertical from start
+    points.push(start.x, srcWpY);
+    // Second segment: horizontal to target approach
+    points.push(tgtWpX, srcWpY);
+    // Third segment: vertical to target
+    if (Math.abs(srcWpY - end.y) > 5) {
+      points.push(tgtWpX, end.y);
+    }
+  }
+}
+
+/**
+ * Build path through a single waypoint
+ */
+function buildSingleWaypointPath(
+  points: number[],
+  start: Point,
+  end: Point,
+  wpX: number,
+  wpY: number,
+  outSide: string,
+  inSide: string
+): void {
+  const minApproachDistance = 30; // Minimum distance for arrow visibility
+  
+  if (outSide === "right" || outSide === "left") {
+    // Exit horizontally
+    points.push(wpX, start.y);
+    
+    if (inSide === "top") {
+      // Need to approach from above - ensure enough vertical space
+      const approachY = end.y - minApproachDistance;
+      if (start.y < approachY) {
+        // Already above, go down to approach height, then horizontal, then down
+        points.push(wpX, approachY);
+        points.push(end.x, approachY);
+      } else {
+        // Need to go up first to get above target
+        const aboveY = Math.min(start.y, end.y - minApproachDistance);
+        points.push(wpX, aboveY);
+        points.push(end.x, aboveY);
+      }
+    } else if (inSide === "bottom") {
+      // Need to approach from below - ensure enough vertical space
+      const approachY = end.y + minApproachDistance;
+      if (start.y > approachY) {
+        points.push(wpX, approachY);
+        points.push(end.x, approachY);
+      } else {
+        const belowY = Math.max(start.y, end.y + minApproachDistance);
+        points.push(wpX, belowY);
+        points.push(end.x, belowY);
+      }
+    } else if (inSide === "left" || inSide === "right") {
+      // Approaching from side - go to waypoint then to end
+      points.push(wpX, end.y);
+    } else {
+      // Default: vertical to waypoint y, then horizontal
+      points.push(wpX, wpY);
+      points.push(end.x, wpY);
+    }
+  } else {
+    // Exit vertically
+    points.push(start.x, wpY);
+    
+    if (inSide === "left") {
+      // Approach from the left
+      const approachX = end.x - minApproachDistance;
+      points.push(approachX, wpY);
+      points.push(approachX, end.y);
+    } else if (inSide === "right") {
+      // Approach from the right
+      const approachX = end.x + minApproachDistance;
+      points.push(approachX, wpY);
+      points.push(approachX, end.y);
+    } else {
+      // Then horizontal to waypoint x, then vertical
+      points.push(wpX, wpY);
+      points.push(wpX, end.y);
+    }
+  }
 }
 
 // Routing helper functions
@@ -686,21 +984,37 @@ function routeRightToBottom(
   toNode: PlacedNode,
   nodeMap: Record<string, PlacedNode>
 ): void {
-  const horizBlocker = lineIntersectsNode(
-    start.x,
-    start.y,
-    end.x,
-    start.y,
-    nodeMap,
-    fromNode.id,
-    toNode.id
-  );
-  if (horizBlocker) {
-    const belowY = horizBlocker.y + nodeHeight + 25;
-    points.push(start.x, belowY);
-    points.push(end.x, belowY);
+  const dy = end.y - start.y;
+  const targetAbove = dy < 0;
+  
+  if (targetAbove) {
+    // Target is above source - need to go right, up, then approach from below
+    // Calculate clearance to the right of source
+    const clearanceX = Math.max(start.x + 30, end.x + nodeWidth / 2 + 30);
+    // Go below the target to approach from bottom
+    const belowTargetY = end.y + 30;
+    
+    points.push(clearanceX, start.y);
+    points.push(clearanceX, belowTargetY);
+    points.push(end.x, belowTargetY);
   } else {
-    points.push(end.x, start.y);
+    // Target is below or same level - standard routing
+    const horizBlocker = lineIntersectsNode(
+      start.x,
+      start.y,
+      end.x,
+      start.y,
+      nodeMap,
+      fromNode.id,
+      toNode.id
+    );
+    if (horizBlocker) {
+      const belowY = horizBlocker.y + nodeHeight + 25;
+      points.push(start.x, belowY);
+      points.push(end.x, belowY);
+    } else {
+      points.push(end.x, start.y);
+    }
   }
 }
 
@@ -712,21 +1026,37 @@ function routeLeftToBottom(
   toNode: PlacedNode,
   nodeMap: Record<string, PlacedNode>
 ): void {
-  const horizBlocker = lineIntersectsNode(
-    start.x,
-    start.y,
-    end.x,
-    start.y,
-    nodeMap,
-    fromNode.id,
-    toNode.id
-  );
-  if (horizBlocker) {
-    const belowY = horizBlocker.y + nodeHeight + 25;
-    points.push(start.x, belowY);
-    points.push(end.x, belowY);
+  const dy = end.y - start.y;
+  const targetAbove = dy < 0;
+  
+  if (targetAbove) {
+    // Target is above source - need to go left, up, then approach from below
+    // Calculate clearance to the left of source
+    const clearanceX = Math.min(start.x - 30, end.x - nodeWidth / 2 - 30);
+    // Go below the target to approach from bottom
+    const belowTargetY = end.y + 30;
+    
+    points.push(clearanceX, start.y);
+    points.push(clearanceX, belowTargetY);
+    points.push(end.x, belowTargetY);
   } else {
-    points.push(end.x, start.y);
+    // Target is below or same level - standard routing
+    const horizBlocker = lineIntersectsNode(
+      start.x,
+      start.y,
+      end.x,
+      start.y,
+      nodeMap,
+      fromNode.id,
+      toNode.id
+    );
+    if (horizBlocker) {
+      const belowY = horizBlocker.y + nodeHeight + 25;
+      points.push(start.x, belowY);
+      points.push(end.x, belowY);
+    } else {
+      points.push(end.x, start.y);
+    }
   }
 }
 
@@ -1185,7 +1515,13 @@ export function drawEdges(
     let points: number[];
     let arrowAngle: number;
 
-    if (isBackEdge || isGoingUp) {
+    // Get bendpoints from edge display data
+    const bendPoints = edge.display?.bendPoints;
+    const hasBendPoints = bendPoints && bendPoints.length > 0;
+
+    // If we have bendpoints, use orthogonal routing even if going up
+    // Bendpoints should take priority over the automatic back-edge detection
+    if ((isBackEdge || isGoingUp) && !hasBendPoints) {
       const result = buildBackEdgePath(fromNode, toNode);
       points = result.points;
       end = result.end;
@@ -1194,7 +1530,7 @@ export function drawEdges(
       points = buildOrthogonalPath(
         start,
         end,
-        null,
+        bendPoints,
         fromNode,
         toNode,
         outSide,
