@@ -1001,9 +1001,13 @@ export function getCanvasScript(): string {
         // Special case: Join-to-Join connections - use simple direct routing
         if (fromNode.type === "join" && toNode.type === "join") {
           console.log("  JOIN-TO-JOIN connection detected");
-          // For join-to-join, use the most direct route based on position
-          if (Math.abs(dx) > Math.abs(dy)) {
-            // Primarily horizontal
+          var absDx = Math.abs(dx);
+          var absDy = Math.abs(dy);
+          
+          // For diagonal movements (similar dx and dy), prefer horizontal routing
+          // This creates cleaner L-shaped paths that avoid nodes in between
+          if (absDx >= absDy * 0.7) {
+            // Horizontal or diagonal - use horizontal routing
             if (dx > 0) {
               outSide = "right";
               inSide = "left";
@@ -1012,7 +1016,7 @@ export function getCanvasScript(): string {
               inSide = "right";
             }
           } else {
-            // Primarily vertical
+            // Primarily vertical (dy is significantly larger)
             if (dy > 0) {
               outSide = "bottom";
               inSide = "top";
