@@ -659,6 +659,16 @@ export function getCanvasScript(): string {
           inSide = "left";
         } else if (outSide === "left" && targetDirectlyToLeft) {
           inSide = "right";
+        } else if (outSide === "bottom" && targetOnSameRow) {
+          // Target is on same row but we're exiting from bottom - prefer horizontal entry
+          // This happens when default routing goes down but target is actually beside us
+          if (targetToRight) {
+            outSide = "right";
+            inSide = "left";
+          } else if (targetToLeft) {
+            outSide = "left";
+            inSide = "right";
+          }
         } else if (targetConn === "in" || targetConn === "in1" || targetConn === "in2") {
           inSide = "top";
         } else if (targetConn === "loop") {
