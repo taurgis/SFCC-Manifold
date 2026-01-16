@@ -223,6 +223,11 @@ function determineSides(
   const targetAbove = dy < -nodeHeight * 0.3;
   const targetBelow = dy > nodeHeight * 0.3;
 
+  console.log(`[EdgeRouting] Edge "${label}" from "${fromNode.label}" to "${toNode.label}" (type: ${toNode.type})`);
+  console.log(`[EdgeRouting]   dx=${dx.toFixed(0)}, dy=${dy.toFixed(0)}`);
+  console.log(`[EdgeRouting]   sourceConn="${sourceConn}", targetConn="${targetConn}"`);
+  console.log(`[EdgeRouting]   bendExitSide=${bendExitSide}, bendEntrySide=${bendEntrySide}`);
+
   let cellBelowEmpty = true;
   let blockingNode: PlacedNode | null = null;
 
@@ -273,7 +278,11 @@ function determineSides(
   }
   // Priority 3: Smart routing based on relative positions
   else {
-    if (!cellBelowEmpty) {
+    // When target is directly to the side on the same row, exit from that side for a direct path
+    const targetOnSameRowForExit = Math.abs(dy) < nodeHeight * 0.5;
+    if (targetOnSameRowForExit && (targetToLeft || targetToRight)) {
+      outSide = targetToLeft ? "left" : "right";
+    } else if (!cellBelowEmpty) {
       if (targetToLeft) {
         outSide = "left";
       } else if (targetToRight) {
@@ -307,39 +316,62 @@ function determineSides(
     // For join nodes, prefer entry from the direction of approach
     const isJoinTarget = toNode.type === "join";
 
+    console.log(`[EdgeRouting]   isJoinTarget=${isJoinTarget}, outSide=${outSide}`);
+    console.log(`[EdgeRouting]   horizontalDist=${horizontalDistance.toFixed(0)}, verticalDist=${verticalDistance.toFixed(0)}`);
+    console.log(`[EdgeRouting]   targetToRight=${targetToRight}, targetToLeft=${targetToLeft}`);
+
     // For join nodes, always determine entry based on approach direction
     if (isJoinTarget) {
       // Determine which direction is dominant
       const verticalDominant = verticalDistance > horizontalDistance * 1.2;
       const horizontalDominant = horizontalDistance > verticalDistance * 1.2;
       
-      if (horizontalDominant || (targetOnSameRow && targetPrimarilyToSide)) {
+      // When exiting vertically (bottom/top) and target has significant horizontal offset
+      // (more than one node width away), prefer horizontal entry - this creates cleaner paths
+      const exitingVertically = outSide === "bottom" || outSide === "top";
+      const significantHorizontalOffset = horizontalDistance > nodeWidth;
+      const preferHorizontalDueToExit = exitingVertically && significantHorizontalOffset;
+      
+      console.log(`[EdgeRouting]   Join: verticalDominant=${verticalDominant}, horizontalDominant=${horizontalDominant}`);
+      console.log(`[EdgeRouting]   Join: exitingVertically=${exitingVertically}, sigHOffset=${significantHorizontalOffset}, preferHDueToExit=${preferHorizontalDueToExit}`);
+      
+      if (horizontalDominant || (targetOnSameRow && targetPrimarilyToSide) || preferHorizontalDueToExit) {
         // Approaching more from the side - use horizontal entry
         if (targetToRight || dx > 0) {
           inSide = "left";
-          if (outSide === "bottom") outSide = "right";
+          // Only change exit side if horizontal is naturally dominant, not if we're forcing it due to exit direction
+          if (outSide === "bottom" && horizontalDominant && !preferHorizontalDueToExit) outSide = "right";
+          console.log(`[EdgeRouting]   Join MATCH: horizontal from left -> inSide=left`);
         } else if (targetToLeft || dx < 0) {
           inSide = "right";
-          if (outSide === "bottom") outSide = "left";
+          // Only change exit side if horizontal is naturally dominant, not if we're forcing it due to exit direction
+          if (outSide === "bottom" && horizontalDominant && !preferHorizontalDueToExit) outSide = "left";
+          console.log(`[EdgeRouting]   Join MATCH: horizontal from right -> inSide=right`);
         } else {
           inSide = "top";
+          console.log(`[EdgeRouting]   Join MATCH: horizontal centered -> inSide=top`);
         }
       } else if (verticalDominant || targetBelow) {
         // Vertical is dominant - enter from top (if target below) or bottom (if target above)
         if (targetBelow || dy > 0) {
           inSide = "top";
+          console.log(`[EdgeRouting]   Join MATCH: vertical from above -> inSide=top`);
         } else {
           inSide = "bottom";
+          console.log(`[EdgeRouting]   Join MATCH: vertical from below -> inSide=bottom`);
         }
       } else if (Math.abs(dx) < nodeWidth * 0.3) {
         // Target is nearly aligned - enter from top/bottom
         inSide = dy > 0 ? "top" : "bottom";
+        console.log(`[EdgeRouting]   Join MATCH: aligned -> inSide=${inSide}`);
       } else {
         // Mixed case - use side based on dx
         if (dx > 0) {
           inSide = "left";
+          console.log(`[EdgeRouting]   Join MATCH: mixed dx>0 -> inSide=left`);
         } else {
           inSide = "right";
+          console.log(`[EdgeRouting]   Join MATCH: mixed dx<0 -> inSide=right`);
         }
       }
     }
