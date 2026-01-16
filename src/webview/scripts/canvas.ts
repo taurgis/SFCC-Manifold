@@ -358,6 +358,20 @@ export function getCanvasScript(): string {
       }
 
       function getAnchor(node, side, offset) {
+        // Join nodes are small circles centered in the cell
+        // All anchors point to/from the center with a small radius offset
+        if (node.type === "join") {
+          var joinRadius = 10;
+          var centerX = node.x + nodeWidth / 2;
+          var centerY = node.y + nodeHeight / 2;
+          
+          if (side === "top") return { x: centerX + offset, y: centerY - joinRadius };
+          if (side === "bottom") return { x: centerX + offset, y: centerY + joinRadius };
+          if (side === "left") return { x: centerX - joinRadius, y: centerY + offset };
+          return { x: centerX + joinRadius, y: centerY + offset }; // right
+        }
+        
+        // Regular nodes
         if (side === "top") return { x: node.x + nodeWidth / 2 + offset, y: node.y };
         if (side === "bottom") return { x: node.x + nodeWidth / 2 + offset, y: node.y + nodeHeight };
         if (side === "left") return { x: node.x, y: node.y + nodeHeight / 2 + offset };
@@ -617,16 +631,16 @@ export function getCanvasScript(): string {
           outSide = "right";
         } else if (sourceConn === "yes" || sourceConn === "true") {
           // YES branch: normally exits right, but if target is directly below
-          // with only 1 vertical gap and path is clear, go straight down
-          if (targetDirectlyBelow && cellBelowEmpty && dy < verticalGap * 1.5) {
+          // and path is clear, go straight down (simpler routing)
+          if (targetDirectlyBelow && cellBelowEmpty) {
             outSide = "bottom";
           } else {
             outSide = "right";  // YES always exits right
           }
         } else if (sourceConn === "no" || sourceConn === "false") {
           // NO branch: normally exits left, but if target is directly below
-          // with only 1 vertical gap and path is clear, go straight down
-          if (targetDirectlyBelow && cellBelowEmpty && dy < verticalGap * 1.5) {
+          // and path is clear, go straight down (simpler routing)
+          if (targetDirectlyBelow && cellBelowEmpty) {
             outSide = "bottom";
           } else {
             outSide = "left";   // NO always exits left
@@ -747,8 +761,17 @@ export function getCanvasScript(): string {
         if (plan.outSide === "bottom" && plan.inSide === "top" && nodesAligned) {
           // Use the same X for both anchors to ensure a perfectly straight line
           var alignedX = fromCenterX;
-          start = { x: alignedX, y: fromNode.y + nodeHeight };
-          end = { x: alignedX, y: toNode.y };
+          
+          // Calculate proper Y positions accounting for join nodes
+          var startY = fromNode.type === "join" 
+            ? fromNode.y + nodeHeight / 2 + 10  // Bottom of join node circle
+            : fromNode.y + nodeHeight;
+          var endY = toNode.type === "join"
+            ? toNode.y + nodeHeight / 2 - 10    // Top of join node circle
+            : toNode.y;
+            
+          start = { x: alignedX, y: startY };
+          end = { x: alignedX, y: endY };
         }
 
         // Check if edge has bend points from XML
@@ -763,10 +786,15 @@ export function getCanvasScript(): string {
 
         if (isBackEdge || (isGoingUp && !hasBendPoints)) {
           // Use bottom->top anchors for loops to look like the legacy editor
+          // Account for join nodes having different anchor points
           var x1 = fromNode.x + nodeWidth / 2;
-          var y1 = fromNode.y + nodeHeight;
+          var y1 = fromNode.type === "join" 
+            ? fromNode.y + nodeHeight / 2 + 10 
+            : fromNode.y + nodeHeight;
           var x2 = toNode.x + nodeWidth / 2;
-          var y2 = toNode.y;
+          var y2 = toNode.type === "join"
+            ? toNode.y + nodeHeight / 2 - 10
+            : toNode.y;
 
           var loopOffset = 50;
           var leftX = Math.min(fromNode.x, toNode.x) - loopOffset;
@@ -867,10 +895,10 @@ export function getCanvasScript(): string {
           var labelX = (start.x + end.x) / 2;
           var labelY = (start.y + end.y) / 2;
           if (plan.outSide === "right" || plan.outSide === "left") {
-            labelY -= 10;
+            labelY -= 14;
           } else {
-            labelX += 10;
-            labelY -= 12;
+            labelX += 14;
+            labelY -= 16;
           }
 
           var text = new Konva.Text({
@@ -923,9 +951,84 @@ export function getCanvasScript(): string {
     }
 
     /**
+     * Draw a join node (small circle connector)
+     */
+    function drawJoinNode(layer, node) {
+      var color = colors[node.type] || colors.join || "#6b7394";
+      var radius = 10;
+
+      var group = new Konva.Group({
+        x: node.x + nodeWidth / 2,  // Center in the cell
+        y: node.y + nodeHeight / 2,
+        name: "node-group"
+      });
+
+      // Store reference for selection
+      nodeGroups[node.id] = group;
+
+      // Outer circle
+      var circle = new Konva.Circle({
+        x: 0,
+        y: 0,
+        radius: radius,
+        fill: "#0d1328",
+        stroke: color,
+        strokeWidth: 2,
+        shadowColor: "#000",
+        shadowBlur: 10,
+        shadowOpacity: 0.4,
+        shadowOffsetY: 2
+      });
+      group.add(circle);
+
+      // Inner dot
+      group.add(new Konva.Circle({
+        x: 0,
+        y: 0,
+        radius: 4,
+        fill: color,
+        listening: false
+      }));
+
+      // Hover effects
+      group.on("mouseenter", function() {
+        document.body.style.cursor = "pointer";
+        if (selectedNodeId !== node.id) {
+          circle.shadowBlur(15);
+          circle.shadowOpacity(0.6);
+          layer.batchDraw();
+        }
+      });
+
+      group.on("mouseleave", function() {
+        document.body.style.cursor = "default";
+        if (selectedNodeId !== node.id) {
+          circle.shadowBlur(10);
+          circle.shadowOpacity(0.4);
+          layer.batchDraw();
+        }
+      });
+
+      // Click to select
+      group.on("click tap", function(e) {
+        e.cancelBubble = true;
+        clearEdgeSelection(layer);
+        selectNode(node, layer);
+      });
+
+      layer.add(group);
+    }
+
+    /**
      * Draw a single node
      */
     function drawNode(layer, node) {
+      // Join nodes are rendered as small circles
+      if (node.type === "join") {
+        drawJoinNode(layer, node);
+        return;
+      }
+
       var color = colors[node.type] || colors.unknown;
 
       var group = new Konva.Group({
