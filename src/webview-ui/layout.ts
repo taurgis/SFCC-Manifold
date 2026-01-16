@@ -13,11 +13,23 @@ interface GridPositionMap {
   [nodeId: string]: { gridX: number; gridY: number };
 }
 
+interface LayoutOptions {
+  /**
+   * Keep normalized grid coordinates on the returned nodes.
+   * Useful for offline tooling that needs both pixel and grid positions.
+   */
+  preserveGrid?: boolean;
+}
+
 /**
  * Calculate node positions using XML grid coordinates
  */
-export function calculateLayout(nodes: PipelineNode[]): PlacedNode[] {
+export function calculateLayout(
+  nodes: PipelineNode[],
+  options?: LayoutOptions
+): PlacedNode[] {
   let placedNodes: PlacedNode[] = [];
+  const preserveGrid = options?.preserveGrid === true;
 
   try {
     // Track absolute grid positions for each node
@@ -124,11 +136,19 @@ export function calculateLayout(nodes: PipelineNode[]): PlacedNode[] {
 
     // Convert grid coordinates to pixel coordinates
     for (const n of placedNodes) {
-      n.x = baseX + ((n.gridX! - minGridX) * horizontalGap);
-      n.y = baseY + ((n.gridY! - minGridY) * verticalGap);
-      // Clean up temporary properties
-      delete n.gridX;
-      delete n.gridY;
+      const normalizedGridX = n.gridX! - minGridX;
+      const normalizedGridY = n.gridY! - minGridY;
+
+      n.x = baseX + (normalizedGridX * horizontalGap);
+      n.y = baseY + (normalizedGridY * verticalGap);
+
+      if (preserveGrid) {
+        n.gridX = normalizedGridX;
+        n.gridY = normalizedGridY;
+      } else {
+        delete n.gridX;
+        delete n.gridY;
+      }
     }
   } catch (e) {
     console.error("Layout error:", e);

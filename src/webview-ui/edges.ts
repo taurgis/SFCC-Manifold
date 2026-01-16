@@ -6,6 +6,7 @@ import Konva from "konva";
 import {
   LAYOUT_CONFIG,
   EDGE_SPACING,
+  EDGE_PAD,
   getEdgeColor,
   isLoopBackEdge,
 } from "./constants";
@@ -19,6 +20,13 @@ import { showPropertiesPanel, renderEdgeProperties } from "./properties";
 import type { PlacedNode, PipelineEdge, Point, BendPoint } from "./types";
 
 const { nodeWidth, nodeHeight, horizontalGap, verticalGap } = LAYOUT_CONFIG;
+
+type ObstacleRect = { left: number; right: number; top: number; bottom: number };
+type Segment = { x1: number; y1: number; x2: number; y2: number };
+
+const ROUTING_GRID_STEP = 18;
+const ROUTING_MARGIN = 200;
+const ROUTING_SEGMENT_THICKNESS = 10;
 
 /**
  * Normalize edge label for comparison
@@ -141,6 +149,33 @@ function getArrowAngleForSide(side: string): number {
   return 0;
 }
 
+function calculateArrowAngleFromPoints(points: number[]): number {
+  if (points.length < 4) return 0;
+  const x2 = points[points.length - 2];
+  const y2 = points[points.length - 1];
+  const x1 = points[points.length - 4];
+  const y1 = points[points.length - 3];
+  return Math.atan2(y2 - y1, x2 - x1);
+}
+
+function sideVector(side: string): Point {
+  switch (side) {
+    case "top":
+      return { x: 0, y: -1 };
+    case "bottom":
+      return { x: 0, y: 1 };
+    case "left":
+      return { x: -1, y: 0 };
+    default:
+      return { x: 1, y: 0 };
+  }
+}
+
+function nudgePoint(point: Point, side: string, distance: number): Point {
+  const v = sideVector(side);
+  return { x: point.x + v.x * distance, y: point.y + v.y * distance };
+}
+
 /**
  * Check if a line segment intersects any node
  */
@@ -187,6 +222,214 @@ function lineIntersectsNode(
     }
   }
   return null;
+}
+
+function buildNodeObstacles(
+  nodeMap: Record<string, PlacedNode>,
+  fromNodeId: string,
+  toNodeId: string
+): ObstacleRect[] {
+  const padding = EDGE_PAD;
+  const obstacles: ObstacleRect[] = [];
+  for (const [id, node] of Object.entries(nodeMap)) {
+    if (id === fromNodeId || id === toNodeId) continue;
+    obstacles.push({
+      left: node.x - padding,
+      right: node.x + nodeWidth + padding,
+      top: node.y - padding,
+      bottom: node.y + nodeHeight + padding,
+    });
+  }
+  return obstacles;
+}
+
+function segmentsToObstacles(segments: Segment[]): ObstacleRect[] {
+  const obstacles: ObstacleRect[] = [];
+  for (const seg of segments) {
+    const minX = Math.min(seg.x1, seg.x2) - ROUTING_SEGMENT_THICKNESS;
+    const maxX = Math.max(seg.x1, seg.x2) + ROUTING_SEGMENT_THICKNESS;
+    const minY = Math.min(seg.y1, seg.y2) - ROUTING_SEGMENT_THICKNESS;
+    const maxY = Math.max(seg.y1, seg.y2) + ROUTING_SEGMENT_THICKNESS;
+    obstacles.push({ left: minX, right: maxX, top: minY, bottom: maxY });
+  }
+  return obstacles;
+}
+
+function computeRoutingBounds(
+  nodeMap: Record<string, PlacedNode>,
+  start: Point,
+  end: Point
+): { minX: number; maxX: number; minY: number; maxY: number } {
+  let minX = Math.min(start.x, end.x);
+  let maxX = Math.max(start.x, end.x);
+  let minY = Math.min(start.y, end.y);
+  let maxY = Math.max(start.y, end.y);
+
+  for (const node of Object.values(nodeMap)) {
+    minX = Math.min(minX, node.x);
+    maxX = Math.max(maxX, node.x + nodeWidth);
+    minY = Math.min(minY, node.y);
+    maxY = Math.max(maxY, node.y + nodeHeight);
+  }
+
+  return {
+    minX: minX - ROUTING_MARGIN,
+    maxX: maxX + ROUTING_MARGIN,
+    minY: minY - ROUTING_MARGIN,
+    maxY: maxY + ROUTING_MARGIN,
+  };
+}
+
+function isInsideObstacle(x: number, y: number, obstacles: ObstacleRect[]): boolean {
+  for (const obs of obstacles) {
+    if (x >= obs.left && x <= obs.right && y >= obs.top && y <= obs.bottom) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function snapToGrid(value: number): number {
+  return Math.round(value / ROUTING_GRID_STEP) * ROUTING_GRID_STEP;
+}
+
+function pointKey(x: number, y: number): string {
+  return `${x}|${y}`;
+}
+
+function reconstructPath(
+  cameFrom: Record<string, string>,
+  currentKey: string,
+  nodeLookup: Record<string, Point>
+): Point[] {
+  const path: Point[] = [nodeLookup[currentKey]];
+  let key = currentKey;
+  while (cameFrom[key]) {
+    key = cameFrom[key];
+    path.push(nodeLookup[key]);
+  }
+  return path.reverse();
+}
+
+function aStarRoute(
+  start: Point,
+  end: Point,
+  obstacles: ObstacleRect[],
+  bounds: { minX: number; maxX: number; minY: number; maxY: number }
+): Point[] | null {
+  const startX = snapToGrid(start.x);
+  const startY = snapToGrid(start.y);
+  const endX = snapToGrid(end.x);
+  const endY = snapToGrid(end.y);
+
+  const startKey = pointKey(startX, startY);
+  const goalKey = pointKey(endX, endY);
+
+  const openSet: string[] = [startKey];
+  const cameFrom: Record<string, string> = {};
+  const gScore: Record<string, number> = { [startKey]: 0 };
+  const fScore: Record<string, number> = {
+    [startKey]: Math.abs(startX - endX) + Math.abs(startY - endY),
+  };
+
+  const nodeLookup: Record<string, Point> = {
+    [startKey]: { x: startX, y: startY },
+  };
+
+  const maxIterations = 12000;
+  let iterations = 0;
+
+  while (openSet.length > 0 && iterations < maxIterations) {
+    iterations += 1;
+    openSet.sort((a, b) => (fScore[a] ?? Infinity) - (fScore[b] ?? Infinity));
+    const current = openSet.shift();
+    if (!current) break;
+    if (current === goalKey) {
+      nodeLookup[goalKey] = { x: endX, y: endY };
+      return reconstructPath(cameFrom, current, nodeLookup);
+    }
+
+    const currentPoint = nodeLookup[current];
+    const neighbors: Point[] = [
+      { x: currentPoint.x + ROUTING_GRID_STEP, y: currentPoint.y },
+      { x: currentPoint.x - ROUTING_GRID_STEP, y: currentPoint.y },
+      { x: currentPoint.x, y: currentPoint.y + ROUTING_GRID_STEP },
+      { x: currentPoint.x, y: currentPoint.y - ROUTING_GRID_STEP },
+    ];
+
+    for (const nb of neighbors) {
+      if (
+        nb.x < bounds.minX ||
+        nb.x > bounds.maxX ||
+        nb.y < bounds.minY ||
+        nb.y > bounds.maxY
+      ) {
+        continue;
+      }
+
+      if (isInsideObstacle(nb.x, nb.y, obstacles)) continue;
+
+      const nbKey = pointKey(nb.x, nb.y);
+      const tentativeG = (gScore[current] ?? Infinity) + ROUTING_GRID_STEP;
+
+      if (tentativeG >= (gScore[nbKey] ?? Infinity)) continue;
+
+      cameFrom[nbKey] = current;
+      gScore[nbKey] = tentativeG;
+      const heuristic = Math.abs(nb.x - endX) + Math.abs(nb.y - endY);
+      fScore[nbKey] = tentativeG + heuristic * 1.1; // light bias toward directness
+      nodeLookup[nbKey] = nb;
+
+      if (!openSet.includes(nbKey)) {
+        openSet.push(nbKey);
+      }
+    }
+  }
+
+  return null;
+}
+
+function simplifyOrthogonalPath(path: Point[]): Point[] {
+  if (path.length < 3) return path;
+  const simplified: Point[] = [path[0]];
+  for (let i = 1; i < path.length - 1; i++) {
+    const prev = simplified[simplified.length - 1];
+    const curr = path[i];
+    const next = path[i + 1];
+
+    const dirPrev = { x: curr.x - prev.x, y: curr.y - prev.y };
+    const dirNext = { x: next.x - curr.x, y: next.y - curr.y };
+    const collinear = dirPrev.x === 0 && dirNext.x === 0;
+    const horizontal = dirPrev.y === 0 && dirNext.y === 0;
+
+    if (collinear || horizontal) {
+      continue;
+    }
+    simplified.push(curr);
+  }
+  simplified.push(path[path.length - 1]);
+  return simplified;
+}
+
+function flattenPoints(points: Point[]): number[] {
+  const result: number[] = [];
+  for (const p of points) {
+    result.push(p.x, p.y);
+  }
+  return result;
+}
+
+function pointsToSegments(points: number[]): Segment[] {
+  const segments: Segment[] = [];
+  for (let i = 0; i < points.length - 2; i += 2) {
+    segments.push({
+      x1: points[i],
+      y1: points[i + 1],
+      x2: points[i + 2],
+      y2: points[i + 3],
+    });
+  }
+  return segments;
 }
 
 /**
@@ -511,6 +754,46 @@ function buildBackEdgePath(
   return { points, end: { x: x2, y: y2 } };
 }
 
+function buildAutoRoutedPath(
+  start: Point,
+  end: Point,
+  fromNode: PlacedNode,
+  toNode: PlacedNode,
+  outSide: string,
+  inSide: string,
+  nodeMap: Record<string, PlacedNode>,
+  occupiedSegments: Segment[]
+): number[] | null {
+  const launch = nudgePoint(start, outSide, 14);
+  const approach = nudgePoint(end, inSide, 14);
+
+  const obstacles = [
+    ...buildNodeObstacles(nodeMap, fromNode.id, toNode.id),
+    ...segmentsToObstacles(occupiedSegments),
+  ];
+
+  const bounds = computeRoutingBounds(nodeMap, start, end);
+
+  // Avoid attempting paths starting inside an obstacle
+  if (isInsideObstacle(launch.x, launch.y, obstacles)) {
+    obstacles.push({
+      left: launch.x - EDGE_PAD,
+      right: launch.x + EDGE_PAD,
+      top: launch.y - EDGE_PAD,
+      bottom: launch.y + EDGE_PAD,
+    });
+  }
+
+  const route = aStarRoute(launch, approach, obstacles, bounds);
+  if (!route) return null;
+
+  const stitched: Point[] = [start, launch, ...route, approach, end];
+  const simplified = simplifyOrthogonalPath(stitched);
+  const flattened = flattenPoints(simplified);
+  ensureMinFinalSegment(flattened);
+  return flattened;
+}
+
 /**
  * Build orthogonal path between points
  * Uses XML bendpoints when available, otherwise falls back to smart routing
@@ -526,7 +809,8 @@ function buildOrthogonalPath(
   startOffset: number,
   endOffset: number,
   nodeMap: Record<string, PlacedNode>,
-  blockingNode: PlacedNode | null
+  blockingNode: PlacedNode | null,
+  occupiedSegments: Segment[]
 ): number[] {
   const points = [start.x, start.y];
   const dx = end.x - start.x;
@@ -565,7 +849,22 @@ function buildOrthogonalPath(
       buildSingleWaypointPath(points, start, end, waypointX, waypointY, outSide, inSide);
     }
   } else {
-    // Fallback to standard routing
+    const autoRouted = buildAutoRoutedPath(
+      start,
+      end,
+      fromNode,
+      toNode,
+      outSide,
+      inSide,
+      nodeMap,
+      occupiedSegments
+    );
+
+    if (autoRouted) {
+      return autoRouted;
+    }
+
+    // Fallback to previous heuristic routing when pathfinding fails
     if (outSide === "bottom" && inSide === "top") {
       routeBottomToTop(points, start, end, dx, dy, fromNode, toNode, nodeMap);
     } else if (outSide === "right" && inSide === "top") {
@@ -1454,6 +1753,7 @@ export function drawEdges(
   const planned: PlannedEdge[] = [];
   const outCounts: Record<string, number> = {};
   const inCounts: Record<string, number> = {};
+  const occupiedSegments: Segment[] = [];
 
   function incCount(map: Record<string, number>, key: string): void {
     map[key] = (map[key] || 0) + 1;
@@ -1570,9 +1870,13 @@ export function drawEdges(
         outOffset,
         inOffset,
         nodeMap,
-        blockingNode
+        blockingNode,
+        occupiedSegments
       );
-      arrowAngle = getArrowAngleForSide(inSide);
+      const computedArrow = calculateArrowAngleFromPoints(points);
+      arrowAngle = Number.isFinite(computedArrow)
+        ? computedArrow
+        : getArrowAngleForSide(inSide);
     }
 
     createEdgeGroup(
@@ -1586,5 +1890,7 @@ export function drawEdges(
       start,
       outSide
     );
+
+    occupiedSegments.push(...pointsToSegments(points));
   }
 }
