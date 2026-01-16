@@ -18,6 +18,20 @@ This project focuses on *reading and understanding* legacy pipelines quickly: op
 	- Double‑click `call`/`jump` nodes to navigate to the referenced start node.
 	- Cross‑pipeline navigation is supported when `start-name-ref` follows the common `PipelineName-StartNodeName` convention.
 
+## Screenshots
+
+### Default pipeline view
+
+![Default pipeline view](docs/screenshots/DEFAULT.png)
+
+### Login pipeline view
+
+![Login pipeline view](docs/screenshots/LOGIN.png)
+
+### Customer Service pipeline view
+
+![Customer Service pipeline view](docs/screenshots/CUSTOMER-SERVICE.png)
+
 ## Supported files
 
 By default the extension registers a custom editor for:
