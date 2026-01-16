@@ -648,7 +648,18 @@ export function getCanvasScript(): string {
         }
         
         // Target connector determines entry side - RESPECT XML if specified
-        if (targetConn === "in" || targetConn === "in1" || targetConn === "in2") {
+        // EXCEPTION: override when target is directly adjacent for cleaner routing
+        var targetOnSameRow = Math.abs(dy) < nodeHeight * 0.5;
+        var targetDirectlyToRight = targetToRight && targetOnSameRow;
+        var targetDirectlyToLeft = targetToLeft && targetOnSameRow;
+        
+        // Smart override: if exiting right and target is directly to the right on same row,
+        // enter from left regardless of XML target connector (cleaner horizontal line)
+        if (outSide === "right" && targetDirectlyToRight) {
+          inSide = "left";
+        } else if (outSide === "left" && targetDirectlyToLeft) {
+          inSide = "right";
+        } else if (targetConn === "in" || targetConn === "in1" || targetConn === "in2") {
           inSide = "top";
         } else if (targetConn === "loop") {
           inSide = "top";
