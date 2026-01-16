@@ -672,6 +672,14 @@ export function getCanvasScript(): string {
             points.push(clearanceX, start.y);
             points.push(clearanceX, aboveTargetY);
             points.push(end.x, aboveTargetY);
+          } else if (outSide === "right" && inSide === "bottom") {
+            // Going right then up to enter from bottom (target is above-right)
+            // Simple L-shape: go right to target's X, then up to target
+            points.push(end.x, start.y);
+          } else if (outSide === "left" && inSide === "bottom") {
+            // Going left then up to enter from bottom (target is above-left)
+            // Simple L-shape: go left to target's X, then up to target
+            points.push(end.x, start.y);
           } else if (outSide === "right" && inSide === "left") {
             // Horizontal connection
             if (Math.abs(dy) > 10) {
@@ -838,9 +846,15 @@ export function getCanvasScript(): string {
         }
         
         // Handle back edges (target above source)
-        if (dy < -nodeHeight && !targetConn) {
+        // When target is above, prefer entering from bottom instead of top
+        // This creates cleaner routing for error/yes branches going to nodes above
+        var targetAbove = dy < -nodeHeight * 0.3;
+        if (targetAbove) {
           if (outSide === "bottom") outSide = "top";
-          if (inSide === "top") inSide = "bottom";
+          // When exiting right/left and target is above, enter from bottom for cleaner L-shape
+          if ((outSide === "right" || outSide === "left") && inSide === "top") {
+            inSide = "bottom";
+          }
         }
 
         return { outSide: outSide, inSide: inSide };
