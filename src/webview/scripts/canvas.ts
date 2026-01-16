@@ -722,6 +722,43 @@ export function getCanvasScript(): string {
         }
         
         points.push(end.x, end.y);
+        
+        // Post-process: ensure the final segment is long enough for the arrow
+        // Arrow needs at least 25px of straight line to look good
+        var minFinalSegment = 25;
+        if (points.length >= 4) {
+          var lastX = points[points.length - 2];
+          var lastY = points[points.length - 1];
+          var prevX = points[points.length - 4];
+          var prevY = points[points.length - 3];
+          
+          var finalDx = Math.abs(lastX - prevX);
+          var finalDy = Math.abs(lastY - prevY);
+          
+          // Check if final segment is too short
+          if (finalDx < 5 && finalDy < minFinalSegment && finalDy > 0) {
+            // Vertical final segment is too short - extend it
+            var extension = minFinalSegment - finalDy;
+            if (lastY > prevY) {
+              // Going down - move the bend point up
+              points[points.length - 3] = prevY - extension;
+            } else {
+              // Going up - move the bend point down
+              points[points.length - 3] = prevY + extension;
+            }
+          } else if (finalDy < 5 && finalDx < minFinalSegment && finalDx > 0) {
+            // Horizontal final segment is too short - extend it
+            var extension = minFinalSegment - finalDx;
+            if (lastX > prevX) {
+              // Going right - move the bend point left
+              points[points.length - 4] = prevX - extension;
+            } else {
+              // Going left - move the bend point right
+              points[points.length - 4] = prevX + extension;
+            }
+          }
+        }
+        
         return points;
       }
 
