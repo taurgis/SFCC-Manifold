@@ -61,11 +61,11 @@ export function getMainScript(): string {
       drawGrid();
       layer.batchDraw();
 
-      // Setup controls
+      // Setup controls (pass layer for viewport culling)
       var updateZoomLevel = createUpdateZoomLevel(stage);
-      setupWheelZoom(stage, drawGrid, updateZoomLevel);
-      setupZoomButtons(stage, getContainerRect, drawGrid, updateZoomLevel, bounds);
-      setupResizeHandler(stage, container, drawGrid, updateContainerRect);
+      setupWheelZoom(stage, layer, drawGrid, updateZoomLevel);
+      setupZoomButtons(stage, layer, getContainerRect, drawGrid, updateZoomLevel, bounds);
+      setupResizeHandler(stage, container, layer, drawGrid, updateContainerRect);
 
       // Setup floating panels (info and legend)
       setupFloatingPanels();
@@ -89,11 +89,18 @@ export function getMainScript(): string {
         navigateToNode(nodeId, stage, layer, placedNodes);
         // Redraw grid after navigation
         drawGrid();
+        // Update culling after navigation
+        updateViewportCulling(stage, layer);
+        layer.batchDraw();
       };
 
-      // Initial fit to view if many nodes
+      // Initial viewport culling and fit to view for large pipelines
       if (placedNodes.length > 10) {
         document.getElementById("zoomFit").click();
+      } else {
+        // Initial culling for smaller pipelines
+        updateViewportCulling(stage, layer);
+        layer.batchDraw();
       }
 
       // If we have an initial start node to navigate to, do it after a short delay
@@ -103,6 +110,8 @@ export function getMainScript(): string {
           if (targetNode) {
             navigateToNode(targetNode.id, stage, layer, placedNodes);
             drawGrid();
+            updateViewportCulling(stage, layer);
+            layer.batchDraw();
           }
         }, 100);
       }

@@ -11,6 +11,113 @@ export function getCanvasScript(): string {
     var selectedEdgeId = null;
 
     /**
+     * Viewport culling configuration
+     * Used to skip rendering of elements outside visible area
+     */
+    var CULLING_MARGIN = 200; // Extra margin around viewport for smoother scrolling
+    var viewportCullingEnabled = true;
+
+    /**
+     * Check if a bounding box is visible in the current viewport
+     * @param {Object} bounds - {x, y, width, height} of the element
+     * @param {Object} stage - Konva stage
+     * @returns {boolean} - true if visible
+     */
+    function isInViewport(bounds, stage) {
+      if (!viewportCullingEnabled) return true;
+      
+      var scale = stage.scaleX();
+      var stagePos = stage.position();
+      var container = stage.container();
+      var viewWidth = container.clientWidth;
+      var viewHeight = container.clientHeight;
+      
+      // Calculate viewport bounds in stage coordinates
+      var vpLeft = (-stagePos.x / scale) - CULLING_MARGIN;
+      var vpTop = (-stagePos.y / scale) - CULLING_MARGIN;
+      var vpRight = (viewWidth - stagePos.x) / scale + CULLING_MARGIN;
+      var vpBottom = (viewHeight - stagePos.y) / scale + CULLING_MARGIN;
+      
+      // Check if bounds intersect viewport
+      return !(bounds.x + bounds.width < vpLeft ||
+               bounds.x > vpRight ||
+               bounds.y + bounds.height < vpTop ||
+               bounds.y > vpBottom);
+    }
+
+    /**
+     * Check if a node is visible in the viewport
+     */
+    function isNodeVisible(node, stage) {
+      return isInViewport({
+        x: node.x,
+        y: node.y,
+        width: nodeWidth,
+        height: nodeHeight
+      }, stage);
+    }
+
+    /**
+     * Check if an edge is visible in the viewport
+     * Uses bounding box of edge points
+     */
+    function isEdgeVisible(points, stage) {
+      if (!points || points.length < 4) return true;
+      
+      var minX = points[0], maxX = points[0];
+      var minY = points[1], maxY = points[1];
+      
+      for (var i = 2; i < points.length; i += 2) {
+        if (points[i] < minX) minX = points[i];
+        if (points[i] > maxX) maxX = points[i];
+        if (points[i + 1] < minY) minY = points[i + 1];
+        if (points[i + 1] > maxY) maxY = points[i + 1];
+      }
+      
+      return isInViewport({
+        x: minX,
+        y: minY,
+        width: maxX - minX,
+        height: maxY - minY
+      }, stage);
+    }
+
+    /**
+     * Update visibility of all nodes and edges based on viewport
+     * Called on pan/zoom for efficient culling
+     */
+    function updateViewportCulling(stage, layer) {
+      // Update node visibility
+      for (var nodeId in nodeGroups) {
+        var group = nodeGroups[nodeId];
+        if (group) {
+          var nodeData = findNodeById(nodeId);
+          if (nodeData) {
+            var shouldBeVisible = isNodeVisible(nodeData, stage);
+            if (group.visible() !== shouldBeVisible) {
+              group.visible(shouldBeVisible);
+            }
+          }
+        }
+      }
+      
+      // Update edge visibility
+      for (var edgeId in edgeGroups) {
+        var group = edgeGroups[edgeId];
+        if (group) {
+          var edgeLine = group.findOne(".edge-line");
+          if (edgeLine) {
+            var points = edgeLine.points();
+            var shouldBeVisible = isEdgeVisible(points, stage);
+            if (group.visible() !== shouldBeVisible) {
+              group.visible(shouldBeVisible);
+            }
+          }
+        }
+      }
+    }
+
+    /**
      * Render legend items in the sidebar
      */
     function renderLegend(placedNodes) {
@@ -54,10 +161,18 @@ export function getCanvasScript(): string {
         draggable: true
       });
 
-      var layer = new Konva.Layer();
+      // Main layer for nodes and edges
+      var layer = new Konva.Layer({
+        // Enable hit graph caching for better performance
+        hitGraphEnabled: true
+      });
       stage.add(layer);
 
-      var gridLayer = new Konva.Layer();
+      // Grid layer with caching for performance
+      var gridLayer = new Konva.Layer({
+        listening: false,  // Grid doesn't need mouse events
+        hitGraphEnabled: false  // Disable hit detection for grid
+      });
       stage.add(gridLayer);
       gridLayer.moveToBottom();
 
@@ -65,37 +180,59 @@ export function getCanvasScript(): string {
     }
 
     /**
-     * Draw background grid
+     * Draw background grid with optimized caching
+     * Uses a single Konva.Shape for the entire grid pattern instead of many Line objects
      */
     function createDrawGrid(stage, gridLayer, getContainerRect) {
+      var lastGridState = null;
+      
       return function drawGrid() {
         var containerRect = getContainerRect();
-        gridLayer.destroyChildren();
         var gridSize = 50;
         var stagePos = stage.position();
         var scale = stage.scaleX();
         
+        // Calculate visible grid bounds
         var startX = Math.floor(-stagePos.x / scale / gridSize) * gridSize - gridSize;
         var endX = Math.ceil((containerRect.width - stagePos.x) / scale / gridSize) * gridSize + gridSize;
         var startY = Math.floor(-stagePos.y / scale / gridSize) * gridSize - gridSize;
         var endY = Math.ceil((containerRect.height - stagePos.y) / scale / gridSize) * gridSize + gridSize;
+        
+        // Create a unique state key to check if we need to redraw
+        var newState = startX + "," + endX + "," + startY + "," + endY + "," + scale;
+        if (lastGridState === newState) {
+          return; // Grid hasn't changed, skip redraw
+        }
+        lastGridState = newState;
 
-        for (var x = startX; x <= endX; x += gridSize) {
-          gridLayer.add(new Konva.Line({
-            points: [x, startY, x, endY],
-            stroke: "#1a2340",
-            strokeWidth: 1 / scale,
-            listening: false
-          }));
-        }
-        for (var y = startY; y <= endY; y += gridSize) {
-          gridLayer.add(new Konva.Line({
-            points: [startX, y, endX, y],
-            stroke: "#1a2340",
-            strokeWidth: 1 / scale,
-            listening: false
-          }));
-        }
+        gridLayer.destroyChildren();
+        
+        // Use a single Shape with sceneFunc for efficient grid drawing
+        var gridShape = new Konva.Shape({
+          sceneFunc: function(ctx, shape) {
+            ctx.beginPath();
+            ctx.strokeStyle = "#1a2340";
+            ctx.lineWidth = 1 / scale;
+            
+            // Draw vertical lines
+            for (var x = startX; x <= endX; x += gridSize) {
+              ctx.moveTo(x, startY);
+              ctx.lineTo(x, endY);
+            }
+            
+            // Draw horizontal lines
+            for (var y = startY; y <= endY; y += gridSize) {
+              ctx.moveTo(startX, y);
+              ctx.lineTo(endX, y);
+            }
+            
+            ctx.stroke();
+          },
+          listening: false,
+          perfectDrawEnabled: false
+        });
+        
+        gridLayer.add(gridShape);
         gridLayer.batchDraw();
       };
     }
@@ -856,7 +993,8 @@ export function getCanvasScript(): string {
 
         // Create a group for the edge
         var edgeGroup = new Konva.Group({
-          name: "edge-group"
+          name: "edge-group",
+          perfectDrawEnabled: false  // Performance optimization
         });
         edgeGroup.setAttr("edgeData", edge);
         edgeGroups[edgeId] = edgeGroup;
@@ -868,7 +1006,8 @@ export function getCanvasScript(): string {
           strokeWidth: 20,
           lineCap: "round",
           lineJoin: "round",
-          hitStrokeWidth: 20
+          hitStrokeWidth: 20,
+          perfectDrawEnabled: false
         });
         edgeGroup.add(hitLine);
 
@@ -880,7 +1019,8 @@ export function getCanvasScript(): string {
           strokeWidth: 2,
           lineCap: "round",
           lineJoin: "round",
-          listening: false
+          listening: false,
+          perfectDrawEnabled: false
         });
         edgeGroup.add(visibleLine);
 
@@ -907,7 +1047,8 @@ export function getCanvasScript(): string {
           stroke: edgeColor,
           strokeWidth: 1,
           rotation: rotationDegrees,
-          listening: false
+          listening: false,
+          perfectDrawEnabled: false
         });
         edgeGroup.add(arrowHead);
 
@@ -981,7 +1122,8 @@ export function getCanvasScript(): string {
       var group = new Konva.Group({
         x: node.x + nodeWidth / 2,  // Center in the cell
         y: node.y + nodeHeight / 2,
-        name: "node-group"
+        name: "node-group",
+        perfectDrawEnabled: false  // Performance optimization
       });
 
       // Store reference for selection
@@ -998,7 +1140,8 @@ export function getCanvasScript(): string {
         shadowColor: "#000",
         shadowBlur: 10,
         shadowOpacity: 0.4,
-        shadowOffsetY: 2
+        shadowOffsetY: 2,
+        perfectDrawEnabled: false
       });
       group.add(circle);
 
@@ -1008,7 +1151,8 @@ export function getCanvasScript(): string {
         y: 0,
         radius: 4,
         fill: color,
-        listening: false
+        listening: false,
+        perfectDrawEnabled: false
       }));
 
       // Hover effects
@@ -1055,7 +1199,8 @@ export function getCanvasScript(): string {
       var group = new Konva.Group({
         x: node.x,
         y: node.y,
-        name: "node-group"
+        name: "node-group",
+        perfectDrawEnabled: false  // Performance optimization
       });
 
       // Store reference for selection
@@ -1072,7 +1217,8 @@ export function getCanvasScript(): string {
         shadowColor: "#000",
         shadowBlur: 15,
         shadowOpacity: 0.4,
-        shadowOffsetY: 5
+        shadowOffsetY: 5,
+        perfectDrawEnabled: false
       });
       group.add(rect);
 
@@ -1084,7 +1230,8 @@ export function getCanvasScript(): string {
         height: nodeHeight / 2,
         fill: "rgba(255,255,255,0.03)",
         cornerRadius: [9, 9, 0, 0],
-        listening: false
+        listening: false,
+        perfectDrawEnabled: false
       }));
 
       // Type pill
@@ -1093,7 +1240,8 @@ export function getCanvasScript(): string {
         fontSize: 10,
         fontFamily: "IBM Plex Sans, system-ui, sans-serif",
         fill: "#0b1021",
-        padding: 0
+        padding: 0,
+        perfectDrawEnabled: false
       });
       var pillWidth = pillText.width() + 12;
       
@@ -1103,7 +1251,8 @@ export function getCanvasScript(): string {
         width: pillWidth,
         height: 18,
         fill: color,
-        cornerRadius: 9
+        cornerRadius: 9,
+        perfectDrawEnabled: false
       }));
 
       pillText.x(10 + 6);
@@ -1121,7 +1270,9 @@ export function getCanvasScript(): string {
         fontStyle: "bold",
         fill: "#d8e2ff",
         ellipsis: true,
-        wrap: "none"
+        wrap: "none",
+        listening: false,
+        perfectDrawEnabled: false
       }));
 
       // Branch subtitle
@@ -1134,7 +1285,9 @@ export function getCanvasScript(): string {
         fontFamily: "IBM Plex Sans, system-ui, sans-serif",
         fill: "#93a4c8",
         ellipsis: true,
-        wrap: "none"
+        wrap: "none",
+        listening: false,
+        perfectDrawEnabled: false
       }));
 
       // Add navigation indicator for jump/call nodes
@@ -1142,14 +1295,18 @@ export function getCanvasScript(): string {
         // External link icon in bottom right corner
         var iconGroup = new Konva.Group({
           x: nodeWidth - 28,
-          y: nodeHeight - 28
+          y: nodeHeight - 28,
+          listening: false,
+          perfectDrawEnabled: false
         });
         
         iconGroup.add(new Konva.Rect({
           width: 20,
           height: 20,
           fill: "rgba(242, 192, 120, 0.2)",
-          cornerRadius: 4
+          cornerRadius: 4,
+          listening: false,
+          perfectDrawEnabled: false
         }));
         
         // Draw external link icon
@@ -1157,21 +1314,27 @@ export function getCanvasScript(): string {
           points: [5, 15, 15, 5],
           stroke: "#f2c078",
           strokeWidth: 1.5,
-          lineCap: "round"
+          lineCap: "round",
+          listening: false,
+          perfectDrawEnabled: false
         }));
         iconGroup.add(new Konva.Line({
           points: [9, 5, 15, 5, 15, 11],
           stroke: "#f2c078",
           strokeWidth: 1.5,
           lineCap: "round",
-          lineJoin: "round"
+          lineJoin: "round",
+          listening: false,
+          perfectDrawEnabled: false
         }));
         iconGroup.add(new Konva.Line({
           points: [5, 9, 5, 15, 11, 15],
           stroke: "#f2c078",
           strokeWidth: 1.5,
           lineCap: "round",
-          lineJoin: "round"
+          lineJoin: "round",
+          listening: false,
+          perfectDrawEnabled: false
         }));
         
         group.add(iconGroup);

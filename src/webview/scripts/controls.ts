@@ -5,6 +5,46 @@
 export function getControlsScript(): string {
   return `
     /**
+     * Debounce helper for performance-critical operations
+     */
+    function debounce(func, wait) {
+      var timeout = null;
+      return function() {
+        var context = this;
+        var args = arguments;
+        if (timeout) clearTimeout(timeout);
+        timeout = setTimeout(function() {
+          func.apply(context, args);
+        }, wait);
+      };
+    }
+
+    /**
+     * Throttle helper for continuous events like drag/zoom
+     */
+    function throttle(func, limit) {
+      var inThrottle = false;
+      var lastArgs = null;
+      return function() {
+        var context = this;
+        var args = arguments;
+        if (!inThrottle) {
+          func.apply(context, args);
+          inThrottle = true;
+          setTimeout(function() {
+            inThrottle = false;
+            if (lastArgs) {
+              func.apply(context, lastArgs);
+              lastArgs = null;
+            }
+          }, limit);
+        } else {
+          lastArgs = args;
+        }
+      };
+    }
+
+    /**
      * Update zoom level display
      */
     function createUpdateZoomLevel(stage) {
@@ -15,9 +55,15 @@ export function getControlsScript(): string {
     }
 
     /**
-     * Setup zoom wheel handler
+     * Setup zoom wheel handler with viewport culling
      */
-    function setupWheelZoom(stage, drawGrid, updateZoomLevel) {
+    function setupWheelZoom(stage, layer, drawGrid, updateZoomLevel) {
+      // Throttled culling update for smooth performance
+      var throttledCulling = throttle(function() {
+        updateViewportCulling(stage, layer);
+        layer.batchDraw();
+      }, 16); // ~60fps
+
       stage.on("wheel", function(e) {
         e.evt.preventDefault();
         
@@ -43,18 +89,26 @@ export function getControlsScript(): string {
         stage.position(newPos);
         
         drawGrid();
+        throttledCulling();
         updateZoomLevel();
       });
 
+      // Throttled drag handler for viewport culling
+      var throttledDragCulling = throttle(function() {
+        updateViewportCulling(stage, layer);
+        layer.batchDraw();
+      }, 32); // ~30fps during drag for better performance
+
       stage.on("dragmove", function() {
         drawGrid();
+        throttledDragCulling();
       });
     }
 
     /**
-     * Setup zoom button handlers
+     * Setup zoom button handlers with viewport culling
      */
-    function setupZoomButtons(stage, getContainerRect, drawGrid, updateZoomLevel, bounds) {
+    function setupZoomButtons(stage, layer, getContainerRect, drawGrid, updateZoomLevel, bounds) {
       // Zoom in
       document.getElementById("zoomIn").addEventListener("click", function() {
         var containerRect = getContainerRect();
@@ -71,6 +125,8 @@ export function getControlsScript(): string {
           y: center.y - mousePointTo.y * newScale
         });
         drawGrid();
+        updateViewportCulling(stage, layer);
+        layer.batchDraw();
         updateZoomLevel();
       });
 
@@ -90,6 +146,8 @@ export function getControlsScript(): string {
           y: center.y - mousePointTo.y * newScale
         });
         drawGrid();
+        updateViewportCulling(stage, layer);
+        layer.batchDraw();
         updateZoomLevel();
       });
 
@@ -98,6 +156,8 @@ export function getControlsScript(): string {
         stage.scale({ x: 1, y: 1 });
         stage.position({ x: 0, y: 0 });
         drawGrid();
+        updateViewportCulling(stage, layer);
+        layer.batchDraw();
         updateZoomLevel();
       });
 
@@ -116,6 +176,8 @@ export function getControlsScript(): string {
           y: (containerRect.height - bounds.maxY * newScale) / 2
         });
         drawGrid();
+        updateViewportCulling(stage, layer);
+        layer.batchDraw();
         updateZoomLevel();
       });
     }
@@ -213,7 +275,13 @@ export function getControlsScript(): string {
      * Setup resize observer for container
      * Uses ResizeObserver to detect panel resizes in VS Code
      */
-    function setupResizeHandler(stage, container, drawGrid, updateContainerRect) {
+    function setupResizeHandler(stage, container, layer, drawGrid, updateContainerRect) {
+      // Debounce resize culling to avoid excessive updates
+      var debouncedCulling = debounce(function() {
+        updateViewportCulling(stage, layer);
+        layer.batchDraw();
+      }, 100);
+
       var resizeObserver = new ResizeObserver(function(entries) {
         for (var i = 0; i < entries.length; i++) {
           var entry = entries[i];
@@ -223,6 +291,7 @@ export function getControlsScript(): string {
             stage.width(rect.width);
             stage.height(rect.height);
             drawGrid();
+            debouncedCulling();
           }
         }
       });
