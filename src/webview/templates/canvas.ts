@@ -20,6 +20,7 @@ export function renderCanvas(data: CanvasData): string {
       ${renderBottomControls()}
       ${renderInfoPanel(data)}
       ${renderLegendPanel()}
+      ${renderSearchPanel()}
       ${renderPropertiesPanel()}
     </main>
   `;
@@ -47,6 +48,9 @@ function renderBottomControls(): string {
       </div>
       <div class="control-divider"></div>
       <div class="control-group utility-controls">
+        <button class="control-btn" id="searchToggle" title="Search nodes (Cmd/Ctrl+F)">
+          ${icons.search}
+        </button>
         <button class="control-btn" id="legendToggle" title="Toggle legend">
           ${icons.grid}
         </button>
@@ -130,13 +134,45 @@ function renderLegendPanel(): string {
   `;
 }
 
+function renderSearchPanel(): string {
+  return `
+    <div class="search-overlay" id="searchOverlay">
+      <div class="search-panel" id="searchPanel">
+        <div class="search-input-wrapper">
+          ${icons.search}
+          <input 
+            type="text" 
+            id="searchInput" 
+            class="search-input" 
+            placeholder="Search nodes by name, type, or ID..." 
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div class="search-shortcut">ESC to close</div>
+        </div>
+        <div class="search-results" id="searchResults">
+          <div class="search-empty" id="searchEmpty">
+            <span class="search-empty-icon">${icons.search}</span>
+            <span class="search-empty-text">Type to search pipelets, decisions, and more...</span>
+          </div>
+        </div>
+        <div class="search-footer" id="searchFooter">
+          <span class="search-hint"><span class="search-key">↑↓</span> Navigate</span>
+          <span class="search-hint"><span class="search-key">Enter</span> Select</span>
+          <span class="search-hint"><span class="search-key">Esc</span> Close</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderHint(): string {
   return `
     <div class="canvas-hint">
       <span class="hint-key">Scroll</span> zoom
       <span class="hint-key">Drag</span> pan
       <span class="hint-key">Click</span> select
-      <span class="hint-key">Double-click</span> navigate
+      <span class="hint-key">⌘F</span> search
     </div>
   `;
 }

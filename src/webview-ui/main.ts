@@ -28,6 +28,7 @@ import { initPropertiesPanel, hidePropertiesPanel, showPropertiesPanel, renderNo
 import { clearSelection, navigateToNode, setPropertiesFunctions } from "./selection";
 import { initNavigation, findStartNode } from "./navigation";
 import { updateViewportCulling } from "./viewport";
+import { initSearch } from "./search";
 import type { PipelineData } from "./types";
 
 const { nodeWidth, nodeHeight } = LAYOUT_CONFIG;
@@ -110,6 +111,9 @@ function initialize(): void {
 
   // Initialize properties panel
   initPropertiesPanel();
+
+  // Initialize search functionality
+  initSearch();
 
   // Setup stage click to deselect
   stage.on("click", (e) => {
