@@ -21,10 +21,13 @@ import type {
   BendPoint,
 } from "../src/webview-ui/types";
 
-// Import shared edge routing modules
+// Import shared edge routing modules - single source of truth for routing
 import {
   getAnchorPoint,
   determineSidesFromMap,
+  buildOrthogonalPath,
+  pointsToSegments,
+  type Segment,
 } from "../src/webview-ui/edges/index";
 
 interface CliOptions {
@@ -330,7 +333,7 @@ function renderFullLayout(
 ): string {
   if (!nodes.length) return "(no nodes)";
 
-  const { nodeWidth, nodeHeight, horizontalGap, verticalGap } = LAYOUT_CONFIG;
+  const { nodeWidth, nodeHeight } = LAYOUT_CONFIG;
 
   let maxX = 0;
   let maxY = 0;
@@ -406,99 +409,71 @@ function renderFullLayout(
     }
   }
 
-  // Draw edges with simple orthogonal paths using shared routing
+  // Convert Map to Record for shared pathBuilder (single source of truth)
+  const nodeRecord: Record<string, PlacedNode> = {};
+  for (const [id, node] of nodeMap) {
+    nodeRecord[id] = node;
+  }
+
+  // Track occupied segments for edge separation (same as webview)
+  const occupiedSegments: Segment[] = [];
+
+  // Draw edges using the same buildOrthogonalPath as the webview
   for (const edge of edges) {
     const fromNode = nodeMap.get(edge.from);
     const toNode = nodeMap.get(edge.to);
     if (!fromNode || !toNode) continue;
 
-    // Use shared routing module
+    // Use shared routing module (same as webview)
     const sides = determineSidesFromMap(edge, fromNode, toNode, nodeMap);
     const start = getAnchorPoint(fromNode, sides.outSide);
     const end = getAnchorPoint(toNode, sides.inSide);
 
-    const pathPoints = buildCoarsePath(
+    // Use the same buildOrthogonalPath function as the webview
+    const pathPoints = buildOrthogonalPath(
       start,
       end,
+      edge.display?.bendPoints ?? null,
       fromNode,
       toNode,
-      edge.display?.bendPoints,
-      horizontalGap,
-      verticalGap
+      sides.outSide,
+      sides.inSide,
+      0, // startOffset
+      0, // endOffset
+      nodeRecord,
+      sides.blockingNode,
+      occupiedSegments
     );
 
-    drawPolyline(canvas, pathPoints, nodeRects);
+    // Track the edge's segments for collision avoidance
+    occupiedSegments.push(...pointsToSegments(pathPoints));
+
+    drawPolylineFromFlat(canvas, pathPoints, nodeRects);
   }
 
   return canvas.map((row) => row.join("")).join("\n");
 }
 
-function buildCoarsePath(
-  start: { x: number; y: number },
-  end: { x: number; y: number },
-  fromNode: PlacedNode,
-  toNode: PlacedNode,
-  bendPoints: BendPoint[] | undefined,
-  horizontalGap: number,
-  verticalGap: number
-): Array<{ x: number; y: number }> {
-  if (bendPoints && bendPoints.length) {
-    const src = bendPoints.find((b) => b.relativeTo === "source");
-    const tgt = bendPoints.find((b) => b.relativeTo === "target");
-    const points: Array<{ x: number; y: number }> = [start];
-    if (src) {
-      points.push({
-        x: fromNode.x + LAYOUT_CONFIG.nodeWidth / 2 + src.x * horizontalGap,
-        y: fromNode.y + LAYOUT_CONFIG.nodeHeight / 2 + src.y * verticalGap,
-      });
-    }
-    if (tgt) {
-      points.push({
-        x: toNode.x + LAYOUT_CONFIG.nodeWidth / 2 + tgt.x * horizontalGap,
-        y: toNode.y + LAYOUT_CONFIG.nodeHeight / 2 + tgt.y * verticalGap,
-      });
-    }
-    points.push(end);
-    return orthogonalize(points);
+/**
+ * Convert flat point array [x1,y1,x2,y2,...] to array of {x,y} objects
+ */
+function flatToPoints(flat: number[]): Array<{ x: number; y: number }> {
+  const points: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < flat.length - 1; i += 2) {
+    points.push({ x: flat[i], y: flat[i + 1] });
   }
-
-  const points: Array<{ x: number; y: number }> = [start];
-  const targetIsJoin = toNode.type === "join";
-  const dx = Math.abs(end.x - start.x);
-  const dy = Math.abs(end.y - start.y);
-  if (targetIsJoin && dy >= 0) {
-    // Prefer a vertical drop then a horizontal move into the join
-    points.push({ x: start.x, y: end.y });
-  } else if (dx > dy) {
-    points.push({ x: end.x, y: start.y });
-  } else {
-    points.push({ x: start.x, y: end.y });
-  }
-  points.push(end);
-  return orthogonalize(points);
+  return points;
 }
 
-function orthogonalize(
-  points: Array<{ x: number; y: number }>
-): Array<{ x: number; y: number }> {
-  if (points.length < 2) return points;
-  const out: Array<{ x: number; y: number }> = [points[0]];
-  for (let i = 1; i < points.length; i += 1) {
-    const prev = out[out.length - 1];
-    const curr = points[i];
-    if (prev.x !== curr.x && prev.y !== curr.y) {
-      out.push({ x: curr.x, y: prev.y });
-    }
-    out.push(curr);
-  }
-  return out;
-}
-
-function drawPolyline(
+/**
+ * Draw a polyline from flat array [x1,y1,x2,y2,...] onto ASCII canvas
+ */
+function drawPolylineFromFlat(
   canvas: string[][],
-  points: Array<{ x: number; y: number }>,
+  flatPoints: number[],
   nodeRects: Array<{ x0: number; y0: number; x1: number; y1: number }>
 ): void {
+  const points = flatToPoints(flatPoints);
   const w = canvas[0].length;
   const h = canvas.length;
 
