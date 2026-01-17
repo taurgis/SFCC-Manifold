@@ -2,7 +2,7 @@
  * Legend rendering module
  */
 
-import { NODE_COLORS } from "./constants";
+import { NODE_COLORS, BENDPOINT_INDICATOR_COLOR } from "./constants";
 import type { PlacedNode } from "./types";
 
 /**
@@ -32,4 +32,28 @@ export function renderLegend(placedNodes: PlacedNode[]): void {
     item.appendChild(label);
     legendEl.appendChild(item);
   }
+
+  // Add bendpoint indicator to legend
+  addBendpointLegendItem(legendEl);
+}
+
+/**
+ * Add bendpoint indicator legend item
+ */
+function addBendpointLegendItem(legendEl: HTMLElement): void {
+  const item = document.createElement("div");
+  item.className = "legend-item";
+
+  const swatch = document.createElement("div");
+  swatch.className = "legend-swatch legend-swatch-circle";
+  swatch.style.background = BENDPOINT_INDICATOR_COLOR;
+  swatch.style.borderRadius = "50%";
+  swatch.style.border = "1px solid #ffffff";
+
+  const label = document.createElement("span");
+  label.textContent = "bendpoint (forced route)";
+
+  item.appendChild(swatch);
+  item.appendChild(label);
+  legendEl.appendChild(item);
 }
