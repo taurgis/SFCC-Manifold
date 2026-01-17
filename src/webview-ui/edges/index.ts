@@ -60,4 +60,5 @@ export {
   buildAutoRoutedPath,
   buildOrthogonalPath,
   ensureMinFinalSegment,
+  type OrthogonalPathResult,
 } from "./pathBuilder";

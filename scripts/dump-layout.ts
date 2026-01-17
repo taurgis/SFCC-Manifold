@@ -28,6 +28,7 @@ import {
   buildOrthogonalPath,
   pointsToSegments,
   type Segment,
+  type OrthogonalPathResult,
 } from "../src/webview-ui/edges/index";
 
 interface CliOptions {
@@ -418,6 +419,9 @@ function renderFullLayout(
   // Track occupied segments for edge separation (same as webview)
   const occupiedSegments: Segment[] = [];
 
+  // Collect all waypoints from bendpoint-routed edges
+  const allWaypoints: Array<{ x: number; y: number }> = [];
+
   // Draw edges using the same buildOrthogonalPath as the webview
   for (const edge of edges) {
     const fromNode = nodeMap.get(edge.from);
@@ -430,7 +434,7 @@ function renderFullLayout(
     const end = getAnchorPoint(toNode, sides.inSide);
 
     // Use the same buildOrthogonalPath function as the webview
-    const pathPoints = buildOrthogonalPath(
+    const pathResult = buildOrthogonalPath(
       start,
       end,
       edge.display?.bendPoints ?? null,
@@ -445,10 +449,28 @@ function renderFullLayout(
       occupiedSegments
     );
 
+    // Handle both return types: plain number[] or OrthogonalPathResult
+    let pathPoints: number[];
+    if (Array.isArray(pathResult)) {
+      pathPoints = pathResult;
+    } else {
+      pathPoints = pathResult.points;
+      // Collect waypoints for visualization
+      allWaypoints.push(...pathResult.waypoints);
+    }
+
     // Track the edge's segments for collision avoidance
     occupiedSegments.push(...pointsToSegments(pathPoints));
 
     drawPolylineFromFlat(canvas, pathPoints, nodeRects);
+  }
+
+  // Draw waypoint indicators (bendpoints) as '*' characters
+  for (const waypoint of allWaypoints) {
+    const cx = clamp(Math.round(waypoint.x / FULL_LAYOUT_SCALE), widthChars);
+    const cy = clamp(Math.round(waypoint.y / FULL_LAYOUT_SCALE), heightChars);
+    // Use '*' to indicate a forced waypoint from XML bendpoints
+    put(cx, cy, "*");
   }
 
   return canvas.map((row) => row.join("")).join("\n");

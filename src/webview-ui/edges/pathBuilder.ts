@@ -658,8 +658,18 @@ export function ensureMinFinalSegment(points: number[]): void {
 }
 
 /**
+ * Result from buildOrthogonalPath including waypoints for visualization
+ */
+export interface OrthogonalPathResult {
+  points: number[];
+  /** Calculated waypoints from bendpoints (for visualization) */
+  waypoints: Point[];
+}
+
+/**
  * Build orthogonal path between points
  * Uses XML bendpoints when available, otherwise falls back to smart routing
+ * Returns both the path points and any calculated waypoints for visualization
  */
 export function buildOrthogonalPath(
   start: Point,
@@ -674,13 +684,14 @@ export function buildOrthogonalPath(
   nodeMap: Record<string, PlacedNode>,
   blockingNode: PlacedNode | null,
   occupiedSegments: Segment[]
-): number[] {
+): number[] | OrthogonalPathResult {
   const points = [start.x, start.y];
   const dx = end.x - start.x;
   const dy = end.y - start.y;
 
   // Check if we have bendpoints that suggest specific waypoints
   const hasBendPoints = bendPoints && bendPoints.length > 0;
+  const calculatedWaypoints: Point[] = [];
 
   if (hasBendPoints) {
     // Use bendpoints to guide routing
@@ -701,6 +712,10 @@ export function buildOrthogonalPath(
       const targetWaypointY =
         toNode.y + nodeHeight / 2 + targetBend.y * verticalGap;
 
+      // Store waypoints for visualization
+      calculatedWaypoints.push({ x: sourceWaypointX, y: sourceWaypointY });
+      calculatedWaypoints.push({ x: targetWaypointX, y: targetWaypointY });
+
       // Build path using waypoints with orthogonal routing
       buildBendpointPath(
         points,
@@ -719,6 +734,10 @@ export function buildOrthogonalPath(
         fromNode.x + nodeWidth / 2 + sourceBend.x * horizontalGap;
       const waypointY =
         fromNode.y + nodeHeight / 2 + sourceBend.y * verticalGap;
+
+      // Store waypoint for visualization
+      calculatedWaypoints.push({ x: waypointX, y: waypointY });
+
       buildSingleWaypointPath(
         points,
         start,
@@ -734,6 +753,10 @@ export function buildOrthogonalPath(
         toNode.x + nodeWidth / 2 + targetBend.x * horizontalGap;
       const waypointY =
         toNode.y + nodeHeight / 2 + targetBend.y * verticalGap;
+
+      // Store waypoint for visualization
+      calculatedWaypoints.push({ x: waypointX, y: waypointY });
+
       buildSingleWaypointPath(
         points,
         start,
@@ -855,5 +878,10 @@ export function buildOrthogonalPath(
 
   points.push(end.x, end.y);
   ensureMinFinalSegment(points);
+
+  // Return with waypoints if bendpoints were used
+  if (calculatedWaypoints.length > 0) {
+    return { points, waypoints: calculatedWaypoints };
+  }
   return points;
 }

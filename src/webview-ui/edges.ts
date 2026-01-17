@@ -6,7 +6,7 @@
  */
 
 import Konva from "konva";
-import { LAYOUT_CONFIG, EDGE_SPACING, getEdgeColor, isLoopBackEdge } from "./constants";
+import { LAYOUT_CONFIG, EDGE_SPACING, getEdgeColor, isLoopBackEdge, BENDPOINT_INDICATOR_COLOR } from "./constants";
 import { edgeGroups, selectedEdgeId, setSelectedEdgeId } from "./state";
 import { clearSelection } from "./selection";
 import { showPropertiesPanel, renderEdgeProperties } from "./properties";
@@ -21,6 +21,7 @@ import {
   buildOrthogonalPath,
   pointsToSegments,
   type Segment,
+  type OrthogonalPathResult,
 } from "./edges/index";
 
 const { nodeWidth, nodeHeight } = LAYOUT_CONFIG;
@@ -170,7 +171,8 @@ function createEdgeGroup(
   arrowAngle: number,
   end: Point,
   start: Point,
-  outSide: string
+  outSide: string,
+  waypoints: Point[] = []
 ): void {
   const edgeGroup = new Konva.Group({
     name: "edge-group",
@@ -234,6 +236,22 @@ function createEdgeGroup(
     perfectDrawEnabled: false,
   });
   edgeGroup.add(arrowHead);
+
+  // Bendpoint waypoint indicators (red dots for forced routes)
+  for (const waypoint of waypoints) {
+    const waypointDot = new Konva.Circle({
+      name: "bendpoint-indicator",
+      x: waypoint.x,
+      y: waypoint.y,
+      radius: 4,
+      fill: BENDPOINT_INDICATOR_COLOR,
+      stroke: "#ffffff",
+      strokeWidth: 1,
+      listening: false,
+      perfectDrawEnabled: false,
+    });
+    edgeGroup.add(waypointDot);
+  }
 
   // Label
   if (edge.label) {
@@ -380,6 +398,7 @@ export function drawEdges(
 
     let points: number[];
     let arrowAngle: number;
+    let waypoints: Point[] = [];
 
     // Get bendpoints from edge display data
     const bendPoints = edge.display?.bendPoints;
@@ -394,7 +413,7 @@ export function drawEdges(
       // For back edges, arrow points up into top of target
       arrowAngle = -Math.PI / 2;
     } else {
-      points = buildOrthogonalPath(
+      const pathResult = buildOrthogonalPath(
         start,
         end,
         bendPoints,
@@ -408,6 +427,15 @@ export function drawEdges(
         blockingNode,
         occupiedSegments
       );
+
+      // Handle both return types: plain number[] or OrthogonalPathResult
+      if (Array.isArray(pathResult)) {
+        points = pathResult;
+      } else {
+        points = pathResult.points;
+        waypoints = pathResult.waypoints;
+      }
+
       // Always use inSide to determine arrow direction
       arrowAngle = getArrowAngleForSide(inSide);
     }
@@ -421,7 +449,8 @@ export function drawEdges(
       arrowAngle,
       end,
       start,
-      outSide
+      outSide,
+      waypoints
     );
 
     occupiedSegments.push(...pointsToSegments(points));

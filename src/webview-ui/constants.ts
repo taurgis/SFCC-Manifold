@@ -65,6 +65,9 @@ export const THEME = {
 export const EDGE_PAD = 26;
 export const EDGE_SPACING = 12;
 
+// Bendpoint indicator color (for forced routes from XML)
+export const BENDPOINT_INDICATOR_COLOR = "#ff4444";
+
 // Viewport culling configuration
 export const CULLING_MARGIN = 200;
 
