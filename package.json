@@ -91,14 +91,21 @@
     "esbuild-extension": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
     "esbuild-webview": "esbuild ./src/webview-ui/main.ts --bundle --outfile=dist/webview.js --format=iife --platform=browser --alias:konva=./src/webview-ui/konva-shim.ts --target=es2020",
     "vscode:prepublish": "npm run esbuild-extension -- --minify && npm run esbuild-webview -- --minify",
-     "dump-layout": "tsx scripts/dump-layout.ts"
+    "dump-layout": "tsx scripts/dump-layout.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui"
   },
   "devDependencies": {
     "@types/node": "^20.11.17",
     "@types/vscode": "^1.84.0",
+    "@vitest/coverage-v8": "^4.0.17",
+    "@vitest/ui": "^4.0.17",
     "esbuild": "^0.20.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^4.0.17"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.8.10",

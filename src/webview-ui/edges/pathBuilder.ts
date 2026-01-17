@@ -22,8 +22,9 @@ const { nodeWidth, nodeHeight, horizontalGap, verticalGap } = LAYOUT_CONFIG;
 /**
  * Check if a point is inside a node's bounding box (with padding)
  * Use a larger padding to ensure waypoints near edges aren't shown inside nodes
+ * @internal Exported for testing
  */
-function isInsideNode(point: Point, node: PlacedNode, padding: number = 15): boolean {
+export function isInsideNode(point: Point, node: PlacedNode, padding: number = 15): boolean {
   return (
     point.x >= node.x - padding &&
     point.x <= node.x + nodeWidth + padding &&
@@ -34,8 +35,9 @@ function isInsideNode(point: Point, node: PlacedNode, padding: number = 15): boo
 
 /**
  * Check if a point is inside any node in the node map
+ * @internal Exported for testing
  */
-function isInsideAnyNode(point: Point, nodeMap: Record<string, PlacedNode>): boolean {
+export function isInsideAnyNode(point: Point, nodeMap: Record<string, PlacedNode>): boolean {
   for (const node of Object.values(nodeMap)) {
     if (isInsideNode(point, node)) {
       return true;
@@ -49,8 +51,9 @@ function isInsideAnyNode(point: Point, nodeMap: Record<string, PlacedNode>): boo
  * A waypoint is meaningful if it's near a corner point where the path
  * changes direction. Waypoints that are simply along a straight segment,
  * near the start/end points, or inside any node boundaries should not be shown.
+ * @internal Exported for testing
  */
-function isWaypointMeaningful(
+export function isWaypointMeaningful(
   waypoint: Point,
   pathPoints: number[],
   nodeMap: Record<string, PlacedNode>,
@@ -88,8 +91,9 @@ function isWaypointMeaningful(
 /**
  * Filter waypoints to only include those that represent meaningful turns
  * and are not inside any node boundaries
+ * @internal Exported for testing
  */
-function filterOnPathWaypoints(
+export function filterOnPathWaypoints(
   waypoints: Point[],
   pathPoints: number[],
   nodeMap: Record<string, PlacedNode>
@@ -299,7 +303,11 @@ function buildSingleWaypointPath(
 
 // ===== Routing helper functions =====
 
-function routeBottomToTop(
+/**
+ * Route from bottom exit to top entry with obstacle avoidance
+ * @internal Exported for testing
+ */
+export function routeBottomToTop(
   points: number[],
   start: Point,
   end: Point,
@@ -386,7 +394,11 @@ function routeBottomToTop(
   }
 }
 
-function routeRightToTop(
+/**
+ * Route from right exit to top entry
+ * @internal Exported for testing
+ */
+export function routeRightToTop(
   points: number[],
   start: Point,
   end: Point,
@@ -438,7 +450,11 @@ function routeRightToTop(
   points.push(end.x, aboveTargetY);
 }
 
-function routeLeftToTop(
+/**
+ * Route from left exit to top entry
+ * @internal Exported for testing
+ */
+export function routeLeftToTop(
   points: number[],
   start: Point,
   end: Point,
@@ -502,7 +518,11 @@ function routeLeftToTop(
   points.push(end.x, aboveTargetY);
 }
 
-function routeLeftToLeft(
+/**
+ * Route from left exit to left entry
+ * @internal Exported for testing
+ */
+export function routeLeftToLeft(
   points: number[],
   start: Point,
   end: Point,
@@ -533,15 +553,27 @@ function routeLeftToLeft(
   points.push(clearanceX, end.y);
 }
 
-function routeBottomToRight(points: number[], start: Point, end: Point): void {
+/**
+ * Route from bottom exit to right entry - simple L-shape
+ * @internal Exported for testing
+ */
+export function routeBottomToRight(points: number[], start: Point, end: Point): void {
   points.push(start.x, end.y);
 }
 
-function routeBottomToLeft(points: number[], start: Point, end: Point): void {
+/**
+ * Route from bottom exit to left entry - simple L-shape
+ * @internal Exported for testing
+ */
+export function routeBottomToLeft(points: number[], start: Point, end: Point): void {
   points.push(start.x, end.y);
 }
 
-function routeRightToBottom(
+/**
+ * Route from right exit to bottom entry
+ * @internal Exported for testing
+ */
+export function routeRightToBottom(
   points: number[],
   start: Point,
   end: Point,
@@ -581,7 +613,11 @@ function routeRightToBottom(
   }
 }
 
-function routeLeftToBottom(
+/**
+ * Route from left exit to bottom entry
+ * @internal Exported for testing
+ */
+export function routeLeftToBottom(
   points: number[],
   start: Point,
   end: Point,
@@ -621,7 +657,11 @@ function routeLeftToBottom(
   }
 }
 
-function routeRightToLeft(
+/**
+ * Route from right exit to left entry
+ * @internal Exported for testing
+ */
+export function routeRightToLeft(
   points: number[],
   start: Point,
   end: Point,
@@ -654,7 +694,11 @@ function routeRightToLeft(
   }
 }
 
-function routeLeftToRight(
+/**
+ * Route from left exit to right entry
+ * @internal Exported for testing
+ */
+export function routeLeftToRight(
   points: number[],
   start: Point,
   end: Point,
@@ -687,7 +731,11 @@ function routeLeftToRight(
   }
 }
 
-function routeTopToBottom(
+/**
+ * Route from top exit to bottom entry
+ * @internal Exported for testing
+ */
+export function routeTopToBottom(
   points: number[],
   start: Point,
   end: Point,
