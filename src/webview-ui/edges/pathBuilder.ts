@@ -20,6 +20,84 @@ import { aStarRoute, simplifyOrthogonalPath, flattenPoints } from "./pathfinding
 const { nodeWidth, nodeHeight, horizontalGap, verticalGap } = LAYOUT_CONFIG;
 
 /**
+ * Check if a point is inside a node's bounding box (with padding)
+ * Use a larger padding to ensure waypoints near edges aren't shown inside nodes
+ */
+function isInsideNode(point: Point, node: PlacedNode, padding: number = 15): boolean {
+  return (
+    point.x >= node.x - padding &&
+    point.x <= node.x + nodeWidth + padding &&
+    point.y >= node.y - padding &&
+    point.y <= node.y + nodeHeight + padding
+  );
+}
+
+/**
+ * Check if a point is inside any node in the node map
+ */
+function isInsideAnyNode(point: Point, nodeMap: Record<string, PlacedNode>): boolean {
+  for (const node of Object.values(nodeMap)) {
+    if (isInsideNode(point, node)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Check if a waypoint represents a meaningful turn/corner in the path.
+ * A waypoint is meaningful if it's near a corner point where the path
+ * changes direction. Waypoints that are simply along a straight segment,
+ * near the start/end points, or inside any node boundaries should not be shown.
+ */
+function isWaypointMeaningful(
+  waypoint: Point,
+  pathPoints: number[],
+  nodeMap: Record<string, PlacedNode>,
+  tolerance: number = 20
+): boolean {
+  // Exclude waypoints that fall inside any node
+  if (isInsideAnyNode(waypoint, nodeMap)) {
+    return false;
+  }
+
+  // Need at least 3 points (6 values) to have a corner
+  if (pathPoints.length < 6) {
+    return false;
+  }
+
+  // Check each interior point (corner) of the path
+  // Skip first point (start) and last point (end)
+  for (let i = 2; i < pathPoints.length - 2; i += 2) {
+    const cornerX = pathPoints[i];
+    const cornerY = pathPoints[i + 1];
+
+    // Check if waypoint is near this corner
+    const dx = Math.abs(waypoint.x - cornerX);
+    const dy = Math.abs(waypoint.y - cornerY);
+
+    if (dx <= tolerance && dy <= tolerance) {
+      // Waypoint is near a corner - this is a meaningful waypoint
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Filter waypoints to only include those that represent meaningful turns
+ * and are not inside any node boundaries
+ */
+function filterOnPathWaypoints(
+  waypoints: Point[],
+  pathPoints: number[],
+  nodeMap: Record<string, PlacedNode>
+): Point[] {
+  return waypoints.filter(wp => isWaypointMeaningful(wp, pathPoints, nodeMap));
+}
+
+/**
  * Build back edge (loop) path
  * Creates a curved path that loops back around the left side
  */
@@ -879,9 +957,13 @@ export function buildOrthogonalPath(
   points.push(end.x, end.y);
   ensureMinFinalSegment(points);
 
-  // Return with waypoints if bendpoints were used
+  // Return with waypoints if bendpoints were used, but filter out
+  // waypoints that lie on the path or inside any node (they don't represent meaningful deviations)
   if (calculatedWaypoints.length > 0) {
-    return { points, waypoints: calculatedWaypoints };
+    const meaningfulWaypoints = filterOnPathWaypoints(calculatedWaypoints, points, nodeMap);
+    if (meaningfulWaypoints.length > 0) {
+      return { points, waypoints: meaningfulWaypoints };
+    }
   }
   return points;
 }
