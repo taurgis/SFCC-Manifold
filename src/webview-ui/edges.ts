@@ -140,22 +140,42 @@ function getAnchor(
 }
 
 /**
- * Get arrow angle for a given side
+ * Get arrow angle for a given entry side
+ * Arrow points INTO the target node from the specified side
  */
 function getArrowAngleForSide(side: string): number {
-  if (side === "top") return -Math.PI / 2;
-  if (side === "bottom") return Math.PI / 2;
-  if (side === "left") return Math.PI;
-  return 0;
+  // If entering from top, arrow points down (into the top of the node)
+  if (side === "top") return Math.PI / 2;      // 90° = down
+  // If entering from bottom, arrow points up (into the bottom of the node)
+  if (side === "bottom") return -Math.PI / 2;  // -90° = up
+  // If entering from left, arrow points right (into the left of the node)
+  if (side === "left") return 0;               // 0° = right
+  // If entering from right, arrow points left (into the right of the node)
+  return Math.PI;                              // 180° = left
 }
 
 function calculateArrowAngleFromPoints(points: number[]): number {
   if (points.length < 4) return 0;
-  const x2 = points[points.length - 2];
-  const y2 = points[points.length - 1];
-  const x1 = points[points.length - 4];
-  const y1 = points[points.length - 3];
-  return Math.atan2(y2 - y1, x2 - x1);
+  
+  // Find the last two DISTINCT points (some paths have duplicate endpoints)
+  const lastX = points[points.length - 2];
+  const lastY = points[points.length - 1];
+  
+  // Walk backwards to find a point that's different from the last point
+  for (let i = points.length - 4; i >= 0; i -= 2) {
+    const prevX = points[i];
+    const prevY = points[i + 1];
+    const dx = lastX - prevX;
+    const dy = lastY - prevY;
+    
+    // If this point is different, use it to calculate the angle
+    if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
+      return Math.atan2(dy, dx);
+    }
+  }
+  
+  // Fallback: all points are the same (shouldn't happen)
+  return 0;
 }
 
 function sideVector(side: string): Point {
@@ -849,6 +869,31 @@ function buildOrthogonalPath(
       buildSingleWaypointPath(points, start, end, waypointX, waypointY, outSide, inSide);
     }
   } else {
+    // Fast path: straight vertical connection (bottom→top, nodes aligned)
+    const isStraightVertical =
+      outSide === "bottom" &&
+      inSide === "top" &&
+      Math.abs(dx) < 5 &&
+      dy > 0;
+    
+    if (isStraightVertical) {
+      // Simple straight line - no routing needed
+      points.push(end.x, end.y);
+      return points;
+    }
+
+    // Fast path: straight horizontal connection (right→left or left→right, same row)
+    const isStraightHorizontal =
+      ((outSide === "right" && inSide === "left") ||
+       (outSide === "left" && inSide === "right")) &&
+      Math.abs(dy) < 5;
+    
+    if (isStraightHorizontal) {
+      // Simple straight line - no routing needed
+      points.push(end.x, end.y);
+      return points;
+    }
+
     const autoRouted = buildAutoRoutedPath(
       start,
       end,
@@ -1681,22 +1726,39 @@ function createEdgeGroup(
   });
   edgeGroup.add(visibleLine);
 
-  // Arrow head
-  const arrowOffset = 12;
-  const arrowX = end.x + arrowOffset * Math.cos(arrowAngle);
-  const arrowY = end.y + arrowOffset * Math.sin(arrowAngle);
-  const rotationDegrees = (arrowAngle * 180) / Math.PI - 90;
+  // Arrow head - manual triangle so orientation is always correct
+  // Use the actual last point from the path, not the `end` parameter
+  const actualEndX = points[points.length - 2];
+  const actualEndY = points[points.length - 1];
+  const arrowRadius = 8;
+  const baseHalf = arrowRadius * 0.7;
+  const dirX = Math.cos(arrowAngle);
+  const dirY = Math.sin(arrowAngle);
+  const tipX = actualEndX;
+  const tipY = actualEndY;
+  const baseCenterX = tipX - dirX * arrowRadius;
+  const baseCenterY = tipY - dirY * arrowRadius;
+  const perpX = -dirY;
+  const perpY = dirX;
+  const baseLeftX = baseCenterX + perpX * baseHalf;
+  const baseLeftY = baseCenterY + perpY * baseHalf;
+  const baseRightX = baseCenterX - perpX * baseHalf;
+  const baseRightY = baseCenterY - perpY * baseHalf;
 
-  const arrowHead = new Konva.RegularPolygon({
+  const arrowHead = new Konva.Line({
     name: "edge-arrow",
-    x: arrowX,
-    y: arrowY,
-    sides: 3,
-    radius: 5,
+    points: [
+      tipX,
+      tipY,
+      baseLeftX,
+      baseLeftY,
+      baseRightX,
+      baseRightY,
+    ],
+    closed: true,
     fill: edgeColor,
     stroke: edgeColor,
     strokeWidth: 1,
-    rotation: rotationDegrees,
     listening: false,
     perfectDrawEnabled: false,
   });
@@ -1857,6 +1919,7 @@ export function drawEdges(
       const result = buildBackEdgePath(fromNode, toNode);
       points = result.points;
       end = result.end;
+      // For back edges, arrow points up into top of target
       arrowAngle = -Math.PI / 2;
     } else {
       points = buildOrthogonalPath(
@@ -1873,10 +1936,9 @@ export function drawEdges(
         blockingNode,
         occupiedSegments
       );
-      const computedArrow = calculateArrowAngleFromPoints(points);
-      arrowAngle = Number.isFinite(computedArrow)
-        ? computedArrow
-        : getArrowAngleForSide(inSide);
+      // Always use inSide to determine arrow direction
+      // This is more reliable than computing from path (which may have routing artifacts)
+      arrowAngle = getArrowAngleForSide(inSide);
     }
 
     createEdgeGroup(

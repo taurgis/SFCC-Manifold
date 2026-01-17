@@ -73,7 +73,7 @@ Prereqs: Node.js (LTS recommended).
 - Override destination: `-o <path>` e.g. `npm run dump-layout -- pipeline_examples/Home.xml -o /tmp/home.txt`.
 - Wider cells: `--cell-width 28` to see more label text per grid cell.
 - Show bendpoints: `--show-bendpoints` to include XML bendpoint hints next to each edge.
-- Full layout sketch: `--full-layout` (or `-F`) to append a coarse ASCII diagram of boxes and routed edges (includes bendpoints when present).
+- Full layout sketch: `--full-layout` (or `-F`) to append a coarse ASCII diagram (~12px per cell) with join nodes drawn as circles and edges routed around node boxes (bendpoints used when present).
 - The dump includes grid placement, node list with pixel coords, edge exit/entry sides, anchor points, and (optionally) bendpoints.
 
 ## Project structure
