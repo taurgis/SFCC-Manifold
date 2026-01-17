@@ -27,7 +27,7 @@ interface PipelineDump {
 
 const DEFAULT_CELL_WIDTH = 18;
 // Smaller scale = more character cells → easier to see short edges between near-vertical neighbors
-const FULL_LAYOUT_SCALE = 12; // pixels per character cell in coarse ASCII view
+const FULL_LAYOUT_SCALE = 8; // pixels per character cell in coarse ASCII view
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
@@ -542,8 +542,8 @@ function renderFullLayout(
     maxY = Math.max(maxY, n.y + nodeHeight);
   }
 
-  const widthChars = Math.ceil((maxX + 80) / FULL_LAYOUT_SCALE) + 2;
-  const heightChars = Math.ceil((maxY + 80) / FULL_LAYOUT_SCALE) + 2;
+  const widthChars = Math.ceil((maxX + 160) / FULL_LAYOUT_SCALE) + 6;
+  const heightChars = Math.ceil((maxY + 160) / FULL_LAYOUT_SCALE) + 6;
   const canvas: string[][] = Array.from({ length: heightChars }, () =>
     Array.from({ length: widthChars }, () => " ")
   );
@@ -702,21 +702,42 @@ function drawPolyline(
   const snapOut = (c: { x: number; y: number }, axis: "horizontal" | "vertical") =>
     snapOutOfRect(c, nodeRects, axis);
 
+  const globalDir = {
+    dx: points.length >= 2 ? points[points.length - 1].x - points[0].x : 0,
+    dy: points.length >= 2 ? points[points.length - 1].y - points[0].y : 0,
+  };
+
+  const segments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+    dir: { dx: number; dy: number };
+  }> = [];
+
   for (let i = 0; i < points.length - 1; i += 1) {
     const rawA = points[i];
     const rawB = points[i + 1];
     const axis = Math.abs(rawA.x - rawB.x) >= Math.abs(rawA.y - rawB.y) ? "horizontal" : "vertical";
     const a = snapOut(toCell(rawA), axis);
     const b = snapOut(toCell(rawB), axis);
-    drawSegment(canvas, a, b, nodeRects);
+    const dirX = rawB.x - rawA.x;
+    const dirY = rawB.y - rawA.y;
+    if (a.x === b.x && a.y === b.y) continue;
+    segments.push({ a, b, dir: { dx: dirX, dy: dirY } });
   }
+
+  segments.forEach((seg, idx) => {
+    drawSegment(canvas, seg.a, seg.b, nodeRects, idx === segments.length - 1, seg.dir, globalDir);
+  });
 }
 
 function drawSegment(
   canvas: string[][],
   a: { x: number; y: number },
   b: { x: number; y: number },
-  nodeRects: Array<{ x0: number; y0: number; x1: number; y1: number }>
+  nodeRects: Array<{ x0: number; y0: number; x1: number; y1: number }>,
+  isTerminal: boolean,
+  directionHint: { dx: number; dy: number },
+  globalDir: { dx: number; dy: number }
 ): void {
   const w = canvas[0].length;
   const h = canvas.length;
@@ -756,6 +777,53 @@ function drawSegment(
       for (let x = a.x; x !== b.x + stepX; x += stepX) {
         put(x, b.y, "-");
       }
+    }
+  }
+
+  if (!isTerminal) return;
+
+  const effDx =
+    globalDir.dx !== 0 || globalDir.dy !== 0
+      ? globalDir.dx
+      : directionHint.dx !== 0 || directionHint.dy !== 0
+        ? directionHint.dx
+        : dx;
+  const effDy =
+    globalDir.dy !== 0 || globalDir.dx !== 0
+      ? globalDir.dy
+      : directionHint.dy !== 0 || directionHint.dx !== 0
+        ? directionHint.dy
+        : dy;
+  const arrowChar = effDx > 0 ? ">" : effDx < 0 ? "<" : effDy > 0 ? "v" : "^";
+  const canArrow = (x: number, y: number): boolean => {
+    if (x < 0 || x >= w || y < 0 || y >= h) return false;
+    if (isInsideNodeRect(x, y, nodeRects)) return false;
+    const existing = canvas[y][x];
+    return existing === " " || existing === "-" || existing === "|" || existing === "+";
+  };
+
+  const placeArrow = (x: number, y: number): boolean => {
+    if (!canArrow(x, y)) return false;
+    canvas[y][x] = arrowChar;
+    return true;
+  };
+
+  if (!placeArrow(b.x, b.y)) {
+    const stepX = Math.sign(dx);
+    const stepY = Math.sign(dy);
+    let placed = false;
+    let x = b.x - stepX;
+    let y = b.y - stepY;
+    for (let i = 0; i < 4 && !placed; i += 1) {
+      if (placeArrow(x, y)) {
+        placed = true;
+        break;
+      }
+      x -= stepX;
+      y -= stepY;
+    }
+    if (!placed) {
+      placeArrow(a.x, a.y);
     }
   }
 }
