@@ -1,7 +1,17 @@
+/**
+ * Dump layout script - generates ASCII layout dumps for debugging
+ * 
+ * This script uses the same routing modules as the webview to ensure
+ * consistent behavior between the debug output and the actual rendering.
+ */
+
 import fs from "fs";
 import path from "path";
 import { parsePipeline } from "../src/lib/pipelineParser";
-import type { PipelineEdge as ParsedEdge, PipelineNode as ParsedNode } from "../src/lib/types";
+import type {
+  PipelineEdge as ParsedEdge,
+  PipelineNode as ParsedNode,
+} from "../src/lib/types";
 import { calculateLayout } from "../src/webview-ui/layout";
 import { LAYOUT_CONFIG } from "../src/webview-ui/constants";
 import type {
@@ -10,6 +20,12 @@ import type {
   PlacedNode,
   BendPoint,
 } from "../src/webview-ui/types";
+
+// Import shared edge routing modules
+import {
+  getAnchorPoint,
+  determineSidesFromMap,
+} from "../src/webview-ui/edges/index";
 
 interface CliOptions {
   inputPath: string;
@@ -26,8 +42,7 @@ interface PipelineDump {
 }
 
 const DEFAULT_CELL_WIDTH = 18;
-// Smaller scale = more character cells → easier to see short edges between near-vertical neighbors
-const FULL_LAYOUT_SCALE = 8; // pixels per character cell in coarse ASCII view
+const FULL_LAYOUT_SCALE = 8;
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
@@ -114,7 +129,9 @@ function toWebviewNodes(nodes: ParsedNode[]): PipelineNode[] {
     type: node.type,
     branch: node.branch,
     attributes: Object.fromEntries(
-      Object.entries(node.attributes || {}).filter(([, value]) => value !== undefined)
+      Object.entries(node.attributes || {}).filter(
+        ([, value]) => value !== undefined
+      )
     ) as Record<string, string>,
     configProperties: node.configProperties ?? [],
     bindings: node.bindings ?? [],
@@ -215,9 +232,7 @@ function renderAsciiGrid(nodes: PlacedNode[], cellWidth: number): string {
       const bucket = cellMap.get(key);
       if (bucket && bucket.length > 0) {
         const label = abbreviate(
-          bucket
-            .map((n) => `${n.label} (${n.type})`)
-            .join(" | "),
+          bucket.map((n) => `${n.label} (${n.type})`).join(" | "),
           cellWidth
         );
         row.push(`[${pad(label, cellWidth)}]`);
@@ -248,7 +263,7 @@ function renderNodeList(nodes: PlacedNode[]): string[] {
 
 function renderEdges(
   edges: PipelineEdge[],
-  nodes: PlacedNode[],
+  _nodes: PlacedNode[],
   nodeMap: Map<string, PlacedNode>,
   showBendpoints: boolean
 ): string[] {
@@ -261,11 +276,16 @@ function renderEdges(
     const toLabel = toNode?.label ?? edge.to;
     const label = edge.label ? ` --${edge.label}--> ` : " ----> ";
 
-    const sides = fromNode && toNode
-      ? determineSidesForDump(edge, fromNode, toNode, nodeMap)
-      : { outSide: "?", inSide: "?" };
+    // Use shared routing module instead of duplicating logic
+    const sides =
+      fromNode && toNode
+        ? determineSidesFromMap(edge, fromNode, toNode, nodeMap)
+        : { outSide: "?", inSide: "?" };
 
-    const startAnchor = fromNode ? getAnchorPoint(fromNode, sides.outSide) : null;
+    // Use shared anchor point calculation
+    const startAnchor = fromNode
+      ? getAnchorPoint(fromNode, sides.outSide)
+      : null;
     const endAnchor = toNode ? getAnchorPoint(toNode, sides.inSide) : null;
     const startPos = startAnchor
       ? `@( ${Math.round(startAnchor.x)}, ${Math.round(startAnchor.y)} )`
@@ -274,9 +294,10 @@ function renderEdges(
       ? `@( ${Math.round(endAnchor.x)}, ${Math.round(endAnchor.y)} )`
       : "@(?, ?)";
 
-    const bendStr = showBendpoints && edge.display?.bendPoints?.length
-      ? formatBendpoints(edge.display.bendPoints)
-      : "";
+    const bendStr =
+      showBendpoints && edge.display?.bendPoints?.length
+        ? formatBendpoints(edge.display.bendPoints)
+        : "";
 
     return `- ${fromLabel} [out=${sides.outSide} ${startPos}]${label}[in=${sides.inSide} ${endPos}] ${toLabel}${bendStr}`;
   });
@@ -293,230 +314,6 @@ function ensureGridCoordinates(nodes: PlacedNode[]): PlacedNode[] {
     );
     return { ...node, gridX, gridY };
   });
-}
-
-// --- Edge side inference (mirrors webview routing heuristics, minus Konva) ---
-
-function normalizeLabel(label: string | null | undefined): string {
-  if (!label) return "";
-  return String(label).toLowerCase().replace(/[\s-]/g, "_");
-}
-
-function isErrorEdge(label: string | null | undefined): boolean {
-  const l = normalizeLabel(label);
-  return l === "error" || l.indexOf("error") !== -1 || l === "pipelet_error";
-}
-
-function inferExitSideFromBendpoints(bendPoints: BendPoint[] | undefined): string | null {
-  if (!bendPoints || bendPoints.length === 0) return null;
-  const sourceBend = bendPoints.find((bp) => bp.relativeTo === "source");
-  if (!sourceBend) return null;
-  const absX = Math.abs(sourceBend.x);
-  const absY = Math.abs(sourceBend.y);
-  if (absX > absY) return sourceBend.x > 0 ? "right" : "left";
-  if (absY > absX) return sourceBend.y > 0 ? "bottom" : "top";
-  if (absX > 0) return sourceBend.x > 0 ? "right" : "left";
-  return null;
-}
-
-function inferEntrySideFromBendpoints(bendPoints: BendPoint[] | undefined): string | null {
-  if (!bendPoints || bendPoints.length === 0) return null;
-  const targetBend = bendPoints.find((bp) => bp.relativeTo === "target");
-  if (!targetBend) return null;
-  const absX = Math.abs(targetBend.x);
-  const absY = Math.abs(targetBend.y);
-  if (absX > absY) return targetBend.x > 0 ? "right" : "left";
-  if (absY > absX) return targetBend.y > 0 ? "bottom" : "top";
-  if (absY > 0) return targetBend.y > 0 ? "bottom" : "top";
-  return null;
-}
-
-function determineSidesForDump(
-  edge: PipelineEdge,
-  fromNode: PlacedNode,
-  toNode: PlacedNode,
-  nodeMap: Map<string, PlacedNode>
-): { outSide: string; inSide: string } {
-  const { nodeWidth, nodeHeight } = LAYOUT_CONFIG;
-  const label = edge.label;
-  const isError = isErrorEdge(label);
-  const dx = toNode.x + nodeWidth / 2 - (fromNode.x + nodeWidth / 2);
-  const dy = toNode.y + nodeHeight / 2 - (fromNode.y + nodeHeight / 2);
-
-  const sourceConn = (edge.sourceConnector || "").toLowerCase();
-  const targetConn = (edge.targetConnector || "").toLowerCase();
-  const bendPoints = edge.display?.bendPoints;
-  const bendExitSide = inferExitSideFromBendpoints(bendPoints);
-  const bendEntrySide = inferEntrySideFromBendpoints(bendPoints);
-
-  let outSide = "bottom";
-  let inSide = "top";
-
-  const targetToRight = dx > nodeWidth * 0.3;
-  const targetToLeft = dx < -nodeWidth * 0.3;
-  const targetDirectlyBelow = Math.abs(dx) < nodeWidth * 0.5 && dy > 0;
-  const targetAbove = dy < -nodeHeight * 0.3;
-  const targetBelow = dy > nodeHeight * 0.3;
-
-  let cellBelowEmpty = true;
-
-  if (nodeMap.size) {
-    const sourceBottomY = fromNode.y + nodeHeight;
-    const targetTopY = toNode.y;
-    const sourceCenterX = fromNode.x + nodeWidth / 2;
-
-    if (dy > 0) {
-      for (const [otherId, otherNode] of nodeMap) {
-        if (otherId === fromNode.id || otherId === toNode.id) continue;
-        const otherCenterX = otherNode.x + nodeWidth / 2;
-        const otherTop = otherNode.y;
-
-        if (Math.abs(otherCenterX - sourceCenterX) < nodeWidth * 0.8) {
-          if (otherTop >= sourceBottomY - 10 && otherTop < targetTopY) {
-            cellBelowEmpty = false;
-            break;
-          }
-        }
-      }
-    }
-  }
-
-  // Exit side
-  if (bendExitSide) {
-    outSide = bendExitSide;
-  } else if (sourceConn === "error" || sourceConn === "pipelet_error" || isError) {
-    outSide = "right";
-  } else if (sourceConn === "yes" || sourceConn === "true") {
-    outSide = targetDirectlyBelow && cellBelowEmpty ? "bottom" : "right";
-  } else if (sourceConn === "no" || sourceConn === "false") {
-    outSide = targetDirectlyBelow && cellBelowEmpty ? "bottom" : "left";
-  } else {
-    const targetOnSameRowForExit = Math.abs(dy) < nodeHeight * 0.5;
-    if (targetOnSameRowForExit && (targetToLeft || targetToRight)) {
-      outSide = targetToLeft ? "left" : "right";
-    } else if (!cellBelowEmpty) {
-      if (targetToLeft) outSide = "left";
-      else if (targetToRight) outSide = "right";
-      else outSide = "left";
-    }
-  }
-
-  // Entry side
-  if (bendEntrySide) {
-    inSide = bendEntrySide;
-  } else {
-    const targetOnSameRow = Math.abs(dy) < nodeHeight * 0.5;
-    const targetDirectlyToRight = targetToRight && targetOnSameRow;
-    const targetDirectlyToLeft = targetToLeft && targetOnSameRow;
-    const sourceToRightOfTarget = dx < -nodeWidth * 0.8;
-    const sourceToLeftOfTarget = dx > nodeWidth * 0.8;
-
-    const horizontalDistance = Math.abs(dx);
-    const verticalDistance = Math.abs(dy);
-    const targetPrimarilyToSide =
-      horizontalDistance > verticalDistance * 0.8 && horizontalDistance > nodeWidth * 0.5;
-
-    const isJoinTarget = toNode.type === "join";
-
-    if (isJoinTarget) {
-      const verticalDominant = verticalDistance > horizontalDistance * 1.2;
-      const horizontalDominant = horizontalDistance > verticalDistance * 1.2;
-      const exitingVertically = outSide === "bottom" || outSide === "top";
-      const significantHorizontalOffset = horizontalDistance > nodeWidth;
-      const preferHorizontalDueToExit = exitingVertically && significantHorizontalOffset;
-
-      if (horizontalDominant || (targetOnSameRow && targetPrimarilyToSide) || preferHorizontalDueToExit) {
-        if (targetToRight || dx > 0) {
-          inSide = "left";
-          if (outSide === "bottom" && horizontalDominant && !preferHorizontalDueToExit) outSide = "right";
-        } else if (targetToLeft || dx < 0) {
-          inSide = "right";
-          if (outSide === "bottom" && horizontalDominant && !preferHorizontalDueToExit) outSide = "left";
-        } else {
-          inSide = "top";
-        }
-      } else if (verticalDominant || targetBelow) {
-        inSide = targetBelow || dy > 0 ? "top" : "bottom";
-      } else if (Math.abs(dx) < nodeWidth * 0.3) {
-        inSide = dy > 0 ? "top" : "bottom";
-      } else {
-        inSide = dx > 0 ? "left" : "right";
-      }
-    } else if (outSide === "right" && targetDirectlyToRight) {
-      inSide = "left";
-    } else if (outSide === "left" && targetDirectlyToLeft) {
-      inSide = "right";
-    } else if (outSide === "bottom" && targetOnSameRow) {
-      if (targetToRight) {
-        outSide = "right";
-        inSide = "left";
-      } else if (targetToLeft) {
-        outSide = "left";
-        inSide = "right";
-      }
-    } else if (outSide === "bottom" && targetPrimarilyToSide) {
-      if (targetToRight) {
-        outSide = "right";
-        inSide = "left";
-      } else if (targetToLeft) {
-        outSide = "left";
-        inSide = "right";
-      }
-    } else if (outSide === "bottom" && sourceToRightOfTarget) {
-      inSide = "right";
-    } else if (outSide === "bottom" && sourceToLeftOfTarget) {
-      inSide = "left";
-    } else if (targetConn === "in" || targetConn === "in1" || targetConn === "in2") {
-      inSide = "top";
-    } else if (targetConn === "loop") {
-      inSide = "top";
-    } else if (targetConn === "left") {
-      inSide = "left";
-    } else if (targetConn === "right") {
-      inSide = "right";
-    } else if (targetConn === "bottom") {
-      inSide = "bottom";
-    } else if (targetConn) {
-      inSide = "top";
-    } else {
-      if (outSide === "right") {
-        if (targetToRight) inSide = "left";
-        else if (targetAbove) inSide = "bottom";
-        else inSide = "top";
-      } else if (outSide === "left") {
-        if (targetToLeft) inSide = "right";
-        else if (targetAbove) inSide = "bottom";
-        else inSide = "top";
-      }
-    }
-  }
-
-  if (targetAbove && !bendExitSide && !bendEntrySide) {
-    if (outSide === "bottom") outSide = "top";
-    if ((outSide === "right" || outSide === "left") && inSide === "top") {
-      inSide = "bottom";
-    }
-  }
-
-  return { outSide, inSide };
-}
-
-function getAnchorPoint(node: PlacedNode, side: string): { x: number; y: number } {
-  const { nodeWidth, nodeHeight } = LAYOUT_CONFIG;
-  if (node.type === "join") {
-    const joinRadius = 10;
-    const centerX = node.x + nodeWidth / 2;
-    const centerY = node.y + nodeHeight / 2;
-    if (side === "top") return { x: centerX, y: centerY - joinRadius };
-    if (side === "bottom") return { x: centerX, y: centerY + joinRadius };
-    if (side === "left") return { x: centerX - joinRadius, y: centerY };
-    return { x: centerX + joinRadius, y: centerY };
-  }
-
-  if (side === "top") return { x: node.x + nodeWidth / 2, y: node.y };
-  if (side === "bottom") return { x: node.x + nodeWidth / 2, y: node.y + nodeHeight };
-  if (side === "left") return { x: node.x, y: node.y + nodeHeight / 2 };
-  return { x: node.x + nodeWidth, y: node.y + nodeHeight / 2 };
 }
 
 function formatBendpoints(bps: BendPoint[]): string {
@@ -557,14 +354,24 @@ function renderFullLayout(
   };
 
   // Draw nodes as boxes with labels
-  const nodeRects: Array<{ x0: number; y0: number; x1: number; y1: number }> = [];
+  const nodeRects: Array<{
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  }> = [];
 
   for (const node of nodes) {
     if (node.type === "join") {
       const cx = Math.floor((node.x + nodeWidth / 2) / FULL_LAYOUT_SCALE);
       const cy = Math.floor((node.y + nodeHeight / 2) / FULL_LAYOUT_SCALE);
       const r = Math.max(1, Math.round(10 / FULL_LAYOUT_SCALE));
-      nodeRects.push({ x0: cx - r - 1, y0: cy - r - 1, x1: cx + r + 1, y1: cy + r + 1 });
+      nodeRects.push({
+        x0: cx - r - 1,
+        y0: cy - r - 1,
+        x1: cx + r + 1,
+        y1: cy + r + 1,
+      });
       put(cx, cy, "o");
       put(cx - 1, cy, "(");
       put(cx + 1, cy, ")");
@@ -599,13 +406,14 @@ function renderFullLayout(
     }
   }
 
-  // Draw edges with simple orthogonal paths; honor bendpoints when present
+  // Draw edges with simple orthogonal paths using shared routing
   for (const edge of edges) {
     const fromNode = nodeMap.get(edge.from);
     const toNode = nodeMap.get(edge.to);
     if (!fromNode || !toNode) continue;
 
-    const sides = determineSidesForDump(edge, fromNode, toNode, nodeMap);
+    // Use shared routing module
+    const sides = determineSidesFromMap(edge, fromNode, toNode, nodeMap);
     const start = getAnchorPoint(fromNode, sides.outSide);
     const end = getAnchorPoint(toNode, sides.inSide);
 
@@ -659,7 +467,7 @@ function buildCoarsePath(
   const dx = Math.abs(end.x - start.x);
   const dy = Math.abs(end.y - start.y);
   if (targetIsJoin && dy >= 0) {
-    // Prefer a vertical drop then a horizontal move into the join, matching the web view routing
+    // Prefer a vertical drop then a horizontal move into the join
     points.push({ x: start.x, y: end.y });
   } else if (dx > dy) {
     points.push({ x: end.x, y: start.y });
@@ -670,7 +478,9 @@ function buildCoarsePath(
   return orthogonalize(points);
 }
 
-function orthogonalize(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
+function orthogonalize(
+  points: Array<{ x: number; y: number }>
+): Array<{ x: number; y: number }> {
   if (points.length < 2) return points;
   const out: Array<{ x: number; y: number }> = [points[0]];
   for (let i = 1; i < points.length; i += 1) {
@@ -716,7 +526,10 @@ function drawPolyline(
   for (let i = 0; i < points.length - 1; i += 1) {
     const rawA = points[i];
     const rawB = points[i + 1];
-    const axis = Math.abs(rawA.x - rawB.x) >= Math.abs(rawA.y - rawB.y) ? "horizontal" : "vertical";
+    const axis =
+      Math.abs(rawA.x - rawB.x) >= Math.abs(rawA.y - rawB.y)
+        ? "horizontal"
+        : "vertical";
     const a = snapOut(toCell(rawA), axis);
     const b = snapOut(toCell(rawB), axis);
     const dirX = rawB.x - rawA.x;
@@ -726,7 +539,15 @@ function drawPolyline(
   }
 
   segments.forEach((seg, idx) => {
-    drawSegment(canvas, seg.a, seg.b, nodeRects, idx === segments.length - 1, seg.dir, globalDir);
+    drawSegment(
+      canvas,
+      seg.a,
+      seg.b,
+      nodeRects,
+      idx === segments.length - 1,
+      seg.dir,
+      globalDir
+    );
   });
 }
 
@@ -799,7 +620,12 @@ function drawSegment(
     if (x < 0 || x >= w || y < 0 || y >= h) return false;
     if (isInsideNodeRect(x, y, nodeRects)) return false;
     const existing = canvas[y][x];
-    return existing === " " || existing === "-" || existing === "|" || existing === "+";
+    return (
+      existing === " " ||
+      existing === "-" ||
+      existing === "|" ||
+      existing === "+"
+    );
   };
 
   const placeArrow = (x: number, y: number): boolean => {
@@ -847,15 +673,24 @@ function snapOutOfRect(
   axis: "horizontal" | "vertical"
 ): { x: number; y: number } {
   for (const rect of rects) {
-    if (cell.x > rect.x0 && cell.x < rect.x1 && cell.y > rect.y0 && cell.y < rect.y1) {
+    if (
+      cell.x > rect.x0 &&
+      cell.x < rect.x1 &&
+      cell.y > rect.y0 &&
+      cell.y < rect.y1
+    ) {
       if (axis === "vertical") {
         const distTop = cell.y - rect.y0;
         const distBottom = rect.y1 - cell.y;
-        return distTop <= distBottom ? { x: cell.x, y: rect.y0 } : { x: cell.x, y: rect.y1 };
+        return distTop <= distBottom
+          ? { x: cell.x, y: rect.y0 }
+          : { x: cell.x, y: rect.y1 };
       }
       const distLeft = cell.x - rect.x0;
       const distRight = rect.x1 - cell.x;
-      return distLeft <= distRight ? { x: rect.x0, y: cell.y } : { x: rect.x1, y: cell.y };
+      return distLeft <= distRight
+        ? { x: rect.x0, y: cell.y }
+        : { x: rect.x1, y: cell.y };
     }
   }
   return cell;
@@ -865,7 +700,11 @@ function mergeChar(existing: string, next: string, preferNext = false): string {
   if (existing === " " || existing === undefined) return next;
   if (existing === next) return existing;
   if (preferNext) {
-    const replacable = existing === " " || existing === "|" || existing === "-" || existing === "+";
+    const replacable =
+      existing === " " ||
+      existing === "|" ||
+      existing === "-" ||
+      existing === "+";
     if (replacable) return next;
     return existing;
   }
