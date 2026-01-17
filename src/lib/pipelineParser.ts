@@ -60,7 +60,9 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
 
     for (const segmentEl of getElementChildren(branchEl, "segment")) {
       const result = parseSegment(segmentEl, branchPath, segmentIndex++, parentLoopNodeId);
-      if (result.firstNodeId) {
+      // Only the FIRST segment's entry node should be connected from the parent.
+      // Subsequent segments are reached via target-path transitions, not direct edges.
+      if (result.firstNodeId && entryIds.length === 0) {
         entryIds.push(result.firstNodeId);
       }
     }
