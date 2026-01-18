@@ -75,29 +75,29 @@ export const CULLING_MARGIN = 200;
  * Get edge color based on label
  */
 export function getEdgeColor(label: string | null | undefined): string {
-  if (!label) return EDGE_COLORS.default;
+  if (!label) {return EDGE_COLORS.default;}
 
   const lowerLabel = label.toLowerCase().replace(/[_-]/g, "_");
 
   // Check for error patterns
-  if (lowerLabel.indexOf("error") !== -1) return EDGE_COLORS.error;
-  if (lowerLabel === "pipelet_error") return EDGE_COLORS.pipelet_error;
+  if (lowerLabel.indexOf("error") !== -1) {return EDGE_COLORS.error;}
+  if (lowerLabel === "pipelet_error") {return EDGE_COLORS.pipelet_error;}
 
   // Check for loop patterns
-  if (lowerLabel === "do") return EDGE_COLORS.do;
-  if (lowerLabel === "loop") return EDGE_COLORS.loop;
-  if (lowerLabel.indexOf("iterate") !== -1) return EDGE_COLORS.iterate;
-  if (lowerLabel === "next_iteration") return EDGE_COLORS.loop;
+  if (lowerLabel === "do") {return EDGE_COLORS.do;}
+  if (lowerLabel === "loop") {return EDGE_COLORS.loop;}
+  if (lowerLabel.indexOf("iterate") !== -1) {return EDGE_COLORS.iterate;}
+  if (lowerLabel === "next_iteration") {return EDGE_COLORS.loop;}
 
   // Check for decision patterns
-  if (lowerLabel === "yes" || lowerLabel === "true") return EDGE_COLORS.yes;
-  if (lowerLabel === "no" || lowerLabel === "false") return EDGE_COLORS.no;
+  if (lowerLabel === "yes" || lowerLabel === "true") {return EDGE_COLORS.yes;}
+  if (lowerLabel === "no" || lowerLabel === "false") {return EDGE_COLORS.no;}
 
   // Check for success patterns
-  if (lowerLabel.indexOf("success") !== -1) return EDGE_COLORS.success;
-  if (lowerLabel === "pipelet_next") return EDGE_COLORS.pipelet_next;
-  if (lowerLabel === "ok") return EDGE_COLORS.ok;
-  if (lowerLabel === "next") return EDGE_COLORS.next;
+  if (lowerLabel.indexOf("success") !== -1) {return EDGE_COLORS.success;}
+  if (lowerLabel === "pipelet_next") {return EDGE_COLORS.pipelet_next;}
+  if (lowerLabel === "ok") {return EDGE_COLORS.ok;}
+  if (lowerLabel === "next") {return EDGE_COLORS.next;}
 
   return EDGE_COLORS.default;
 }
@@ -106,7 +106,7 @@ export function getEdgeColor(label: string | null | undefined): string {
  * Check if this is a loop back-edge (going upward)
  */
 export function isLoopBackEdge(label: string | null | undefined): boolean {
-  if (!label) return false;
+  if (!label) {return false;}
   const lowerLabel = label.toLowerCase();
   return lowerLabel === "loop" || lowerLabel === "next_iteration";
 }

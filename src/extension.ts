@@ -51,7 +51,7 @@ class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
     // Listen for document changes
     const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === document.uri.toString()) {
-        this.updateWebview(document, webviewPanel);
+        void this.updateWebview(document, webviewPanel);
       }
     });
 

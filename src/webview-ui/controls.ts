@@ -43,7 +43,7 @@ export function setupWheelZoom(
 
     const oldScale = stage.scaleX();
     const pointer = stage.getPointerPosition();
-    if (!pointer) return;
+    if (!pointer) {return;}
 
     const mousePointTo = {
       x: (pointer.x - stage.x()) / oldScale,

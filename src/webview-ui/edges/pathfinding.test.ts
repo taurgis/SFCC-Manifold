@@ -25,8 +25,8 @@ describe("snapToGrid", () => {
   it("should handle negative values", () => {
     const step = ROUTING_GRID_STEP;
     expect(snapToGrid(-step)).toBe(-step);
-    // Math.round rounds -0.5 to -0, which is equivalent to 0 (== comparison)
-    expect(snapToGrid(-step / 2) == 0).toBe(true);
+    // Math.round rounds -0.5 to -0, which is equivalent to 0
+    expect(snapToGrid(-step / 2) === 0).toBe(true);
     expect(snapToGrid(-step - 1)).toBe(-step);
   });
 });

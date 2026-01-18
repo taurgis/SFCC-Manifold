@@ -21,7 +21,7 @@ interface BoundingBox {
  * Check if a bounding box is visible in the current viewport
  */
 export function isInViewport(bounds: BoundingBox, stage: Konva.Stage): boolean {
-  if (!viewportCullingEnabled) return true;
+  if (!viewportCullingEnabled) {return true;}
 
   const scale = stage.scaleX();
   const stagePos = stage.position();
@@ -63,7 +63,7 @@ export function isNodeVisible(node: PlacedNode, stage: Konva.Stage): boolean {
  * Check if an edge is visible in the viewport
  */
 export function isEdgeVisible(points: number[], stage: Konva.Stage): boolean {
-  if (!points || points.length < 4) return true;
+  if (!points || points.length < 4) {return true;}
 
   let minX = points[0];
   let maxX = points[0];
@@ -71,10 +71,10 @@ export function isEdgeVisible(points: number[], stage: Konva.Stage): boolean {
   let maxY = points[1];
 
   for (let i = 2; i < points.length; i += 2) {
-    if (points[i] < minX) minX = points[i];
-    if (points[i] > maxX) maxX = points[i];
-    if (points[i + 1] < minY) minY = points[i + 1];
-    if (points[i + 1] > maxY) maxY = points[i + 1];
+    if (points[i] < minX) {minX = points[i];}
+    if (points[i] > maxX) {maxX = points[i];}
+    if (points[i + 1] < minY) {minY = points[i + 1];}
+    if (points[i + 1] > maxY) {maxY = points[i + 1];}
   }
 
   return isInViewport(
@@ -93,7 +93,7 @@ export function isEdgeVisible(points: number[], stage: Konva.Stage): boolean {
  */
 export function updateViewportCulling(
   stage: Konva.Stage,
-  layer: Konva.Layer
+  _layer: Konva.Layer
 ): void {
   // Update node visibility
   for (const nodeId in nodeGroups) {

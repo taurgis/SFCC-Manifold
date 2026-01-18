@@ -89,9 +89,9 @@ export function determineSides(
 
   if (dy > 0) {
     for (const nodeId of nodeIds) {
-      if (nodeId === fromNode.id || nodeId === toNode.id) continue;
+      if (nodeId === fromNode.id || nodeId === toNode.id) {continue;}
       const otherNode = getNode(nodeId);
-      if (!otherNode) continue;
+      if (!otherNode) {continue;}
       
       const otherCenterX = otherNode.x + nodeWidth / 2;
       const otherTop = otherNode.y;
@@ -192,12 +192,12 @@ export function determineSides(
         if (targetToRight || dx > 0) {
           inSide = "left";
           // Only change exit side if horizontal is naturally dominant, not if we're forcing it due to exit direction
-          if (outSide === "bottom" && horizontalDominant && !preferHorizontalDueToExit) outSide = "right";
+          if (outSide === "bottom" && horizontalDominant && !preferHorizontalDueToExit) {outSide = "right";}
           debugLog(`[EdgeRouting]   Join MATCH: horizontal from left -> inSide=left`);
         } else if (targetToLeft || dx < 0) {
           inSide = "right";
           // Only change exit side if horizontal is naturally dominant, not if we're forcing it due to exit direction
-          if (outSide === "bottom" && horizontalDominant && !preferHorizontalDueToExit) outSide = "left";
+          if (outSide === "bottom" && horizontalDominant && !preferHorizontalDueToExit) {outSide = "left";}
           debugLog(`[EdgeRouting]   Join MATCH: horizontal from right -> inSide=right`);
         } else {
           inSide = "top";
@@ -301,7 +301,7 @@ export function determineSides(
 
   // Handle back edges (target above source) - but respect bendpoints
   if (targetAbove && !bendExitSide && !bendEntrySide) {
-    if (outSide === "bottom") outSide = "top";
+    if (outSide === "bottom") {outSide = "top";}
     if ((outSide === "right" || outSide === "left") && inSide === "top") {
       inSide = "bottom";
     }

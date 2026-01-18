@@ -2,7 +2,6 @@
  * Properties panel rendering and management
  */
 
-import type Konva from "konva";
 import { NODE_COLORS, getEdgeColor } from "./constants";
 import { pipelineData, placedNodes, setSelectedNodeId, setSelectedEdgeId } from "./state";
 import { iconSvgs, getNodeTypeIcon } from "./icons";
@@ -36,7 +35,7 @@ export function initPropertiesPanel(): void {
   const closeBtn = document.getElementById("propertiesClose");
   const content = document.getElementById("propertiesContent");
 
-  if (!panel || !closeBtn || !content) return;
+  if (!panel || !closeBtn || !content) {return;}
 
   closeBtn.addEventListener("click", () => {
     hidePropertiesPanel();
@@ -80,7 +79,7 @@ export function initPropertiesPanel(): void {
 function initPanelResize(): void {
   const panel = document.getElementById("propertiesPanel");
   const handle = document.getElementById("propertiesResizeHandle");
-  if (!panel || !handle) return;
+  if (!panel || !handle) {return;}
 
   let isResizing = false;
   let startX = 0;
@@ -101,7 +100,7 @@ function initPanelResize(): void {
   });
 
   document.addEventListener("mousemove", (e) => {
-    if (!isResizing) return;
+    if (!isResizing) {return;}
 
     const delta = startX - e.clientX;
     const newWidth = Math.min(maxWidth, Math.max(minWidth, startWidth + delta));
@@ -144,7 +143,7 @@ export function hidePropertiesPanel(): void {
  */
 export function renderNodeProperties(node: PlacedNode | PipelineNode): void {
   const content = document.getElementById("propertiesContent");
-  if (!content) return;
+  if (!content) {return;}
 
   const color = NODE_COLORS[node.type] || NODE_COLORS.unknown;
 
@@ -177,7 +176,7 @@ export function renderNodeProperties(node: PlacedNode | PipelineNode): void {
  */
 export function renderEdgeProperties(edge: PipelineEdge): void {
   const content = document.getElementById("propertiesContent");
-  if (!content) return;
+  if (!content) {return;}
 
   const fromNode = findNodeById(edge.from);
   const toNode = findNodeById(edge.to);

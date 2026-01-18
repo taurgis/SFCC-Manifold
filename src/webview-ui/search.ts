@@ -2,7 +2,6 @@
  * Search functionality for finding nodes in the pipeline
  */
 
-import type Konva from "konva";
 import { NODE_COLORS } from "./constants";
 import { placedNodes } from "./state";
 import { getNodeTypeIcon, iconSvgs } from "./icons";
@@ -29,7 +28,7 @@ export function initSearch(): void {
   const input = document.getElementById("searchInput") as HTMLInputElement;
   const searchToggle = document.getElementById("searchToggle");
 
-  if (!overlay || !input) return;
+  if (!overlay || !input) {return;}
 
   // Toggle button click
   searchToggle?.addEventListener("click", () => {
@@ -106,7 +105,7 @@ export function openSearch(): void {
   const input = document.getElementById("searchInput") as HTMLInputElement;
   const searchToggle = document.getElementById("searchToggle");
 
-  if (!overlay || !input) return;
+  if (!overlay || !input) {return;}
 
   isSearchOpen = true;
   overlay.classList.add("visible");
@@ -131,7 +130,7 @@ export function closeSearch(): void {
   const overlay = document.getElementById("searchOverlay");
   const searchToggle = document.getElementById("searchToggle");
 
-  if (!overlay) return;
+  if (!overlay) {return;}
 
   isSearchOpen = false;
   overlay.classList.remove("visible");
@@ -230,9 +229,9 @@ function getMatchType(node: PlacedNode, query: string): "name" | "type" | "id" |
   const typeLower = node.type.toLowerCase();
   const idLower = node.id.toLowerCase();
 
-  if (labelLower.includes(query)) return "name";
-  if (typeLower.includes(query)) return "type";
-  if (idLower.includes(query)) return "id";
+  if (labelLower.includes(query)) {return "name";}
+  if (typeLower.includes(query)) {return "type";}
+  if (idLower.includes(query)) {return "id";}
   return "branch";
 }
 
@@ -265,7 +264,7 @@ function renderResults(query: string): void {
   const resultsContainer = document.getElementById("searchResults");
   const footer = document.getElementById("searchFooter");
 
-  if (!resultsContainer) return;
+  if (!resultsContainer) {return;}
 
   if (currentResults.length === 0) {
     resultsContainer.innerHTML = `
@@ -275,7 +274,7 @@ function renderResults(query: string): void {
         </span>
       </div>
     `;
-    if (footer) footer.style.display = "none";
+    if (footer) {footer.style.display = "none";}
     return;
   }
 
@@ -311,7 +310,7 @@ function renderResults(query: string): void {
   html += "</div>";
   resultsContainer.innerHTML = html;
 
-  if (footer) footer.style.display = "flex";
+  if (footer) {footer.style.display = "flex";}
 
   // Scroll selected item into view
   scrollSelectedIntoView();
@@ -351,7 +350,7 @@ function highlightMatch(text: string, query: string): string {
  * Navigate through results with arrow keys
  */
 function navigateResults(direction: number): void {
-  if (currentResults.length === 0) return;
+  if (currentResults.length === 0) {return;}
 
   selectedIndex += direction;
 

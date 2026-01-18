@@ -130,8 +130,8 @@ export function calculateLayout(
     let minGridX = 0;
     let minGridY = 0;
     for (const n of placedNodes) {
-      if (n.gridX !== undefined && n.gridX < minGridX) minGridX = n.gridX;
-      if (n.gridY !== undefined && n.gridY < minGridY) minGridY = n.gridY;
+      if (n.gridX !== undefined && n.gridX < minGridX) {minGridX = n.gridX;}
+      if (n.gridY !== undefined && n.gridY < minGridY) {minGridY = n.gridY;}
     }
 
     // Convert grid coordinates to pixel coordinates
@@ -201,13 +201,13 @@ function findParentNodePosition(
 ): { gridX: number; gridY: number } | null {
   const branch = node.branch;
   const slashIndex = branch.lastIndexOf("/");
-  if (slashIndex === -1) return null;
+  if (slashIndex === -1) {return null;}
 
   const parentNodeId = branch.substring(0, slashIndex);
 
   // Look for this exact node ID
   let pos = nodeGridPositions[parentNodeId];
-  if (pos) return pos;
+  if (pos) {return pos;}
 
   // Try to find by branch matching
   const lastColonBeforeSlash = parentNodeId.lastIndexOf(":");
@@ -221,7 +221,7 @@ function findParentNodePosition(
         const otherNode = allNodes[i];
         if (otherNode.id === parentNodeId) {
           pos = nodeGridPositions[otherNode.id];
-          if (pos) return pos;
+          if (pos) {return pos;}
         }
       }
     }
@@ -231,7 +231,7 @@ function findParentNodePosition(
   for (let i = currentIndex - 1; i >= 0; i--) {
     if (allNodes[i].id === parentNodeId) {
       pos = nodeGridPositions[allNodes[i].id];
-      if (pos) return pos;
+      if (pos) {return pos;}
     }
   }
 
@@ -250,7 +250,7 @@ function findPreviousNodePosition(
   for (let i = currentIndex - 1; i >= 0; i--) {
     if (allNodes[i].branch === node.branch) {
       const pos = nodeGridPositions[allNodes[i].id];
-      if (pos) return pos;
+      if (pos) {return pos;}
     }
   }
   return null;
@@ -277,8 +277,8 @@ export function calculateBounds(placedNodes: PlacedNode[]): Bounds {
   let maxY = baseY;
 
   for (const n of placedNodes) {
-    if (n.x + nodeWidth > maxX) maxX = n.x + nodeWidth;
-    if (n.y + nodeHeight > maxY) maxY = n.y + nodeHeight;
+    if (n.x + nodeWidth > maxX) {maxX = n.x + nodeWidth;}
+    if (n.y + nodeHeight > maxY) {maxY = n.y + nodeHeight;}
   }
 
   return {

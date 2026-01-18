@@ -61,7 +61,7 @@ export function clearSelection(): void {
  */
 export function updateNodeVisual(nodeId: string, isSelected: boolean): void {
   const group = nodeGroups[nodeId];
-  if (!group) return;
+  if (!group) {return;}
 
   const nodeData = findNodeById(nodeId);
   const nodeColor = nodeData
@@ -203,11 +203,11 @@ export function navigateToNode(
     }
   }
 
-  if (!node) return;
+  if (!node) {return;}
 
   // Center the view on the target node
   const container = document.getElementById("konva-container");
-  if (!container) return;
+  if (!container) {return;}
   
   const containerRect = container.getBoundingClientRect();
   const scale = stage.scaleX();

@@ -28,7 +28,6 @@ import {
   buildOrthogonalPath,
   pointsToSegments,
   type Segment,
-  type OrthogonalPathResult,
 } from "../src/webview-ui/edges/index";
 
 interface CliOptions {
@@ -77,7 +76,7 @@ async function main(): Promise<void> {
   const outPath = path.resolve(process.cwd(), options.outputPath || defaultOut);
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, dump.ascii, "utf8");
-  // eslint-disable-next-line no-console
+   
   console.log(`Layout written to ${outPath}`);
 }
 
@@ -211,7 +210,7 @@ function renderDump(
 }
 
 function renderAsciiGrid(nodes: PlacedNode[], cellWidth: number): string {
-  if (nodes.length === 0) return "(no nodes)";
+  if (nodes.length === 0) {return "(no nodes)";}
 
   const maxX = Math.max(...nodes.map((n) => n.gridX ?? 0));
   const maxY = Math.max(...nodes.map((n) => n.gridY ?? 0));
@@ -251,10 +250,10 @@ function renderAsciiGrid(nodes: PlacedNode[], cellWidth: number): string {
 }
 
 function renderNodeList(nodes: PlacedNode[]): string[] {
-  if (nodes.length === 0) return ["(no nodes)"];
+  if (nodes.length === 0) {return ["(no nodes)"];}
   const sorted = [...nodes].sort((a, b) => {
     const y = (a.gridY ?? 0) - (b.gridY ?? 0);
-    if (y !== 0) return y;
+    if (y !== 0) {return y;}
     return (a.gridX ?? 0) - (b.gridX ?? 0);
   });
 
@@ -271,7 +270,7 @@ function renderEdges(
   nodeMap: Map<string, PlacedNode>,
   showBendpoints: boolean
 ): string[] {
-  if (!edges.length) return ["(no edges)"];
+  if (!edges.length) {return ["(no edges)"];}
 
   return edges.map((edge) => {
     const fromNode = nodeMap.get(edge.from);
@@ -309,7 +308,7 @@ function renderEdges(
 
 function ensureGridCoordinates(nodes: PlacedNode[]): PlacedNode[] {
   return nodes.map((node) => {
-    if (node.gridX !== undefined && node.gridY !== undefined) return node;
+    if (node.gridX !== undefined && node.gridY !== undefined) {return node;}
     const gridX = Math.round(
       (node.x - LAYOUT_CONFIG.baseX) / LAYOUT_CONFIG.horizontalGap
     );
@@ -332,7 +331,7 @@ function renderFullLayout(
   edges: PipelineEdge[],
   nodeMap: Map<string, PlacedNode>
 ): string {
-  if (!nodes.length) return "(no nodes)";
+  if (!nodes.length) {return "(no nodes)";}
 
   const { nodeWidth, nodeHeight } = LAYOUT_CONFIG;
 
@@ -426,7 +425,7 @@ function renderFullLayout(
   for (const edge of edges) {
     const fromNode = nodeMap.get(edge.from);
     const toNode = nodeMap.get(edge.to);
-    if (!fromNode || !toNode) continue;
+    if (!fromNode || !toNode) {continue;}
 
     // Use shared routing module (same as webview)
     const sides = determineSidesFromMap(edge, fromNode, toNode, nodeMap);
@@ -531,7 +530,7 @@ function drawPolylineFromFlat(
     const b = snapOut(toCell(rawB), axis);
     const dirX = rawB.x - rawA.x;
     const dirY = rawB.y - rawA.y;
-    if (a.x === b.x && a.y === b.y) continue;
+    if (a.x === b.x && a.y === b.y) {continue;}
     segments.push({ a, b, dir: { dx: dirX, dy: dirY } });
   }
 
@@ -598,7 +597,7 @@ function drawSegment(
     }
   }
 
-  if (!isTerminal) return;
+  if (!isTerminal) {return;}
 
   const effDx =
     globalDir.dx !== 0 || globalDir.dy !== 0
@@ -614,8 +613,8 @@ function drawSegment(
         : dy;
   const arrowChar = effDx > 0 ? ">" : effDx < 0 ? "<" : effDy > 0 ? "v" : "^";
   const canArrow = (x: number, y: number): boolean => {
-    if (x < 0 || x >= w || y < 0 || y >= h) return false;
-    if (isInsideNodeRect(x, y, nodeRects)) return false;
+    if (x < 0 || x >= w || y < 0 || y >= h) {return false;}
+    if (isInsideNodeRect(x, y, nodeRects)) {return false;}
     const existing = canvas[y][x];
     return (
       existing === " " ||
@@ -626,7 +625,7 @@ function drawSegment(
   };
 
   const placeArrow = (x: number, y: number): boolean => {
-    if (!canArrow(x, y)) return false;
+    if (!canArrow(x, y)) {return false;}
     canvas[y][x] = arrowChar;
     return true;
   };
@@ -694,35 +693,35 @@ function snapOutOfRect(
 }
 
 function mergeChar(existing: string, next: string, preferNext = false): string {
-  if (existing === " " || existing === undefined) return next;
-  if (existing === next) return existing;
+  if (existing === " " || existing === undefined) {return next;}
+  if (existing === next) {return existing;}
   if (preferNext) {
     const replacable =
       existing === " " ||
       existing === "|" ||
       existing === "-" ||
       existing === "+";
-    if (replacable) return next;
+    if (replacable) {return next;}
     return existing;
   }
   const combos = new Set([existing, next]);
-  if (combos.has("|") && combos.has("-")) return "+";
-  if (combos.has("+")) return "+";
+  if (combos.has("|") && combos.has("-")) {return "+";}
+  if (combos.has("+")) {return "+";}
   return existing;
 }
 
 function abbreviate(value: string, maxLength: number): string {
-  if (value.length <= maxLength) return value;
+  if (value.length <= maxLength) {return value;}
   return `${value.slice(0, maxLength - 1)}…`;
 }
 
 function pad(value: string, width: number): string {
-  if (value.length >= width) return value;
+  if (value.length >= width) {return value;}
   return `${value}${" ".repeat(width - value.length)}`;
 }
 
 function centerText(value: string, width: number): string {
-  if (value.length >= width) return value;
+  if (value.length >= width) {return value;}
   const total = width - value.length;
   const left = Math.floor(total / 2);
   const right = total - left;
@@ -730,7 +729,7 @@ function centerText(value: string, width: number): string {
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(`Failed to dump layout: ${(err as Error).message}`);
   process.exit(1);
 });

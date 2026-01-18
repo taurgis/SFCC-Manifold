@@ -10,12 +10,12 @@ import type { PlacedNode } from "./types";
  */
 export function renderLegend(placedNodes: PlacedNode[]): void {
   const legendEl = document.getElementById("legend");
-  if (!legendEl) return;
+  if (!legendEl) {return;}
 
   const seenTypes: Record<string, boolean> = {};
 
   for (const node of placedNodes) {
-    if (seenTypes[node.type]) continue;
+    if (seenTypes[node.type]) {continue;}
     seenTypes[node.type] = true;
 
     const item = document.createElement("div");

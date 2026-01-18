@@ -82,7 +82,7 @@ export function aStarRoute(
     openSet.sort((a, b) => (fScore[a] ?? Infinity) - (fScore[b] ?? Infinity));
     const current = openSet.shift();
     
-    if (!current) break;
+    if (!current) {break;}
     
     if (current === goalKey) {
       nodeLookup[goalKey] = { x: endX, y: endY };
@@ -107,12 +107,12 @@ export function aStarRoute(
         continue;
       }
 
-      if (isInsideObstacle(nb.x, nb.y, obstacles)) continue;
+      if (isInsideObstacle(nb.x, nb.y, obstacles)) {continue;}
 
       const nbKey = pointKey(nb.x, nb.y);
       const tentativeG = (gScore[current] ?? Infinity) + ROUTING_GRID_STEP;
 
-      if (tentativeG >= (gScore[nbKey] ?? Infinity)) continue;
+      if (tentativeG >= (gScore[nbKey] ?? Infinity)) {continue;}
 
       cameFrom[nbKey] = current;
       gScore[nbKey] = tentativeG;
@@ -136,7 +136,7 @@ export function aStarRoute(
  * @returns Simplified path with only turn points
  */
 export function simplifyOrthogonalPath(path: Point[]): Point[] {
-  if (path.length < 3) return path;
+  if (path.length < 3) {return path;}
   
   const simplified: Point[] = [path[0]];
   

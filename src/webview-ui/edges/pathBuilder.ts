@@ -184,7 +184,7 @@ export function buildAutoRoutedPath(
   }
 
   const route = aStarRoute(launch, approach, obstacles, bounds);
-  if (!route) return null;
+  if (!route) {return null;}
 
   const stitched: Point[] = [start, launch, ...route, approach, end];
   const simplified = simplifyOrthogonalPath(stitched);

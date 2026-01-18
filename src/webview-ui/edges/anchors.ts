@@ -26,15 +26,15 @@ export function getAnchor(node: PlacedNode, side: string, offset: number): Point
     const centerX = node.x + nodeWidth / 2;
     const centerY = node.y + nodeHeight / 2;
 
-    if (side === "top") return { x: centerX + offset, y: centerY - JOIN_RADIUS };
-    if (side === "bottom") return { x: centerX + offset, y: centerY + JOIN_RADIUS };
-    if (side === "left") return { x: centerX - JOIN_RADIUS, y: centerY + offset };
+    if (side === "top") {return { x: centerX + offset, y: centerY - JOIN_RADIUS };}
+    if (side === "bottom") {return { x: centerX + offset, y: centerY + JOIN_RADIUS };}
+    if (side === "left") {return { x: centerX - JOIN_RADIUS, y: centerY + offset };}
     return { x: centerX + JOIN_RADIUS, y: centerY + offset };
   }
 
-  if (side === "top") return { x: node.x + nodeWidth / 2 + offset, y: node.y };
-  if (side === "bottom") return { x: node.x + nodeWidth / 2 + offset, y: node.y + nodeHeight };
-  if (side === "left") return { x: node.x, y: node.y + nodeHeight / 2 + offset };
+  if (side === "top") {return { x: node.x + nodeWidth / 2 + offset, y: node.y };}
+  if (side === "bottom") {return { x: node.x + nodeWidth / 2 + offset, y: node.y + nodeHeight };}
+  if (side === "left") {return { x: node.x, y: node.y + nodeHeight / 2 + offset };}
   return { x: node.x + nodeWidth, y: node.y + nodeHeight / 2 + offset };
 }
 
@@ -58,11 +58,11 @@ export function getAnchorPoint(node: PlacedNode, side: string): Point {
  */
 export function getArrowAngleForSide(side: string): number {
   // If entering from top, arrow points down (into the top of the node)
-  if (side === "top") return Math.PI / 2; // 90° = down
+  if (side === "top") {return Math.PI / 2;} // 90° = down
   // If entering from bottom, arrow points up (into the bottom of the node)
-  if (side === "bottom") return -Math.PI / 2; // -90° = up
+  if (side === "bottom") {return -Math.PI / 2;} // -90° = up
   // If entering from left, arrow points right (into the left of the node)
-  if (side === "left") return 0; // 0° = right
+  if (side === "left") {return 0;} // 0° = right
   // If entering from right, arrow points left (into the right of the node)
   return Math.PI; // 180° = left
 }
@@ -75,7 +75,7 @@ export function getArrowAngleForSide(side: string): number {
  * @returns Angle in radians
  */
 export function calculateArrowAngleFromPoints(points: number[]): number {
-  if (points.length < 4) return 0;
+  if (points.length < 4) {return 0;}
 
   // Find the last two DISTINCT points (some paths have duplicate endpoints)
   const lastX = points[points.length - 2];

@@ -3,13 +3,10 @@
  * This is the bundled script that runs in the webview context
  */
 
-import { LAYOUT_CONFIG } from "./constants";
 import {
   setPipelineData,
   setPlacedNodes,
   setInitialStartNode,
-  pipelineData,
-  placedNodes,
 } from "./state";
 import { calculateLayout, buildNodeMap, calculateBounds } from "./layout";
 import { initializeStage, createDrawGrid } from "./stage";
@@ -31,18 +28,14 @@ import { updateViewportCulling } from "./viewport";
 import { initSearch } from "./search";
 import type { PipelineData } from "./types";
 
-const { nodeWidth, nodeHeight } = LAYOUT_CONFIG;
-
-// Declare globals that will be injected by the HTML
-declare const pipelineDataGlobal: PipelineData;
-declare const initialStartNodeGlobal: string | undefined;
-
 /**
  * Initialize the canvas
  */
 function initialize(): void {
   // Get data from global variables injected by the HTML
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = (window as any).pipelineData as PipelineData;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const startNode = (window as any).initialStartNode as string | undefined;
 
   if (!data) {

@@ -4,7 +4,7 @@
  */
 
 import type Konva from "konva";
-import type { PlacedNode, PipelineData, PipelineEdge } from "./types";
+import type { PlacedNode, PipelineData } from "./types";
 
 // Node groups storage for selection
 export const nodeGroups: Record<string, Konva.Group> = {};

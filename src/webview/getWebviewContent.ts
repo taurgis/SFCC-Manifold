@@ -7,7 +7,7 @@ import * as vscode from "vscode";
 import { ParsedPipeline } from "../lib/types";
 import { createNonce, encodeForScript } from "./helpers";
 import { getStyles } from "./styles";
-import { renderCanvas, CanvasData } from "./templates/canvas";
+import { renderCanvas } from "./templates/canvas";
 
 export interface WebviewContentOptions {
   webview: vscode.Webview;

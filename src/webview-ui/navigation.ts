@@ -2,7 +2,6 @@
  * Navigation script for handling cross-pipeline navigation
  */
 
-import type Konva from "konva";
 import type { PlacedNode, VSCodeAPI } from "./types";
 import { navigateToNode } from "./selection";
 
@@ -20,7 +19,7 @@ export function initNavigation(): void {
     const message = event.data;
 
     switch (message.type) {
-      case "navigateToStartNode":
+      case "navigateToStartNode": {
         // Extension is telling us to navigate to a specific start node
         const targetNode = findStartNode(message.startNode);
         if (targetNode && window.pipelineStage && window.pipelineLayer) {
@@ -33,6 +32,7 @@ export function initNavigation(): void {
           window.drawGridFn?.();
         }
         break;
+      }
     }
   });
 }
@@ -42,7 +42,7 @@ export function initNavigation(): void {
  */
 export function handleNodeDoubleClick(node: PlacedNode): void {
   const targetRef = node.attributes["start-name-ref"];
-  if (!targetRef) return;
+  if (!targetRef) {return;}
 
   const parts = parseTargetReference(targetRef);
 
@@ -97,7 +97,7 @@ function parseTargetReference(
  * Find a start node by name in the current pipeline
  */
 export function findStartNode(startNodeName: string): PlacedNode | null {
-  if (!window.placedNodes) return null;
+  if (!window.placedNodes) {return null;}
 
   for (const node of window.placedNodes) {
     if (node.type === "start") {

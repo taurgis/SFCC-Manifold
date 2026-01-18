@@ -12,7 +12,7 @@ import type { BendPoint } from "../types";
  * Converts to lowercase and normalizes separators to underscores
  */
 export function normalizeLabel(label: string | null | undefined): string {
-  if (!label) return "";
+  if (!label) {return "";}
   return String(label).toLowerCase().replace(/[\s-]/g, "_");
 }
 
@@ -34,11 +34,11 @@ export function isErrorEdge(label: string | null | undefined): boolean {
 export function inferExitSideFromBendpoints(
   bendPoints: BendPoint[] | undefined
 ): string | null {
-  if (!bendPoints || bendPoints.length === 0) return null;
+  if (!bendPoints || bendPoints.length === 0) {return null;}
 
   // Look for source-relative bendpoint
   const sourceBend = bendPoints.find((bp) => bp.relativeTo === "source");
-  if (!sourceBend) return null;
+  if (!sourceBend) {return null;}
 
   // x > 0 means go right, x < 0 means go left
   // y > 0 means go down, y < 0 means go up
@@ -70,11 +70,11 @@ export function inferExitSideFromBendpoints(
 export function inferEntrySideFromBendpoints(
   bendPoints: BendPoint[] | undefined
 ): string | null {
-  if (!bendPoints || bendPoints.length === 0) return null;
+  if (!bendPoints || bendPoints.length === 0) {return null;}
 
   // Look for target-relative bendpoint
   const targetBend = bendPoints.find((bp) => bp.relativeTo === "target");
-  if (!targetBend) return null;
+  if (!targetBend) {return null;}
 
   // The direction TO the target determines entry side
   // x > 0 means coming from left (entering right side)

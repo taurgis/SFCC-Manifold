@@ -56,11 +56,11 @@ export function lineIntersectsNode(
   fromNodeId: string,
   toNodeId: string
 ): PlacedNode | null {
-  if (!nodeMap) return null;
+  if (!nodeMap) {return null;}
   const padding = 10;
 
   for (const nodeId in nodeMap) {
-    if (nodeId === fromNodeId || nodeId === toNodeId) continue;
+    if (nodeId === fromNodeId || nodeId === toNodeId) {continue;}
     const node = nodeMap[nodeId];
     const nodeLeft = node.x - padding;
     const nodeRight = node.x + nodeWidth + padding;
@@ -109,7 +109,7 @@ export function buildNodeObstacles(
   const obstacles: ObstacleRect[] = [];
   
   for (const [id, node] of Object.entries(nodeMap)) {
-    if (id === fromNodeId || id === toNodeId) continue;
+    if (id === fromNodeId || id === toNodeId) {continue;}
     obstacles.push({
       left: node.x - padding,
       right: node.x + nodeWidth + padding,

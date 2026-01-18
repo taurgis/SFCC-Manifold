@@ -6,7 +6,7 @@
  * Escape HTML for safe rendering
  */
 export function escapeHtml(str: unknown): string {
-  if (str === null || str === undefined) return "";
+  if (str === null || str === undefined) {return "";}
   return String(str)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -19,7 +19,7 @@ export function escapeHtml(str: unknown): string {
  * Escape string for use in HTML attributes
  */
 export function escapeAttr(str: unknown): string {
-  if (str === null || str === undefined) return "";
+  if (str === null || str === undefined) {return "";}
   return String(str)
     .replace(/\\/g, "\\\\")
     .replace(/'/g, "\\'")
@@ -41,11 +41,10 @@ export function debounce<T extends (...args: unknown[]) => void>(
   wait: number
 ): (...args: Parameters<T>) => void {
   let timeout: ReturnType<typeof setTimeout> | null = null;
-  return function (this: unknown, ...args: Parameters<T>) {
-    const context = this;
-    if (timeout) clearTimeout(timeout);
+  return function (this: unknown, ...args: Parameters<T>): void {
+    if (timeout) { clearTimeout(timeout); }
     timeout = setTimeout(() => {
-      func.apply(context, args);
+      func.apply(this, args);
     }, wait);
   };
 }
@@ -59,20 +58,24 @@ export function throttle<T extends (...args: unknown[]) => void>(
 ): (...args: Parameters<T>) => void {
   let inThrottle = false;
   let lastArgs: Parameters<T> | null = null;
-  return function (this: unknown, ...args: Parameters<T>) {
-    const context = this;
+  let lastThis: unknown = null;
+
+  return function (this: unknown, ...args: Parameters<T>): void {
     if (!inThrottle) {
-      func.apply(context, args);
+      func.apply(this, args);
       inThrottle = true;
       setTimeout(() => {
         inThrottle = false;
-        if (lastArgs) {
-          func.apply(context, lastArgs);
+        if (lastArgs !== null) {
+          func.apply(lastThis, lastArgs);
           lastArgs = null;
+          lastThis = null;
         }
       }, limit);
     } else {
       lastArgs = args;
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
+      lastThis = this;
     }
   };
 }

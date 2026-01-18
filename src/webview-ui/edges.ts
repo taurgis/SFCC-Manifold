@@ -21,7 +21,6 @@ import {
   buildOrthogonalPath,
   pointsToSegments,
   type Segment,
-  type OrthogonalPathResult,
 } from "./edges/index";
 
 const { nodeWidth, nodeHeight } = LAYOUT_CONFIG;
@@ -29,7 +28,7 @@ const { nodeWidth, nodeHeight } = LAYOUT_CONFIG;
 /**
  * Clear edge selection
  */
-export function clearEdgeSelection(layer: Konva.Layer): void {
+export function clearEdgeSelection(_layer: Konva.Layer): void {
   if (selectedEdgeId && edgeGroups[selectedEdgeId]) {
     const group = edgeGroups[selectedEdgeId];
     const edgeData = group.getAttr("edgeData") as PipelineEdge;
@@ -78,7 +77,7 @@ function selectEdge(
 
   setSelectedEdgeId(edgeId);
   const group = edgeGroups[edgeId];
-  if (!group) return;
+  if (!group) {return;}
 
   const highlightColor = "#ffffff";
 
@@ -317,7 +316,7 @@ export function drawEdges(
     const edge = edges[i];
     const fromNode = nodeMap[edge.from];
     const toNode = nodeMap[edge.to];
-    if (!fromNode || !toNode) continue;
+    if (!fromNode || !toNode) {continue;}
 
     const edgeId = `edge-${i}-${edge.from}-${edge.to}`;
     const sides = determineSidesFromNodeMap(edge, fromNode, toNode, nodeMap);
