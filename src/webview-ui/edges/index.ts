@@ -62,5 +62,12 @@ export {
   buildAutoRoutedPath,
   buildOrthogonalPath,
   ensureMinFinalSegment,
+  ChannelRegistry,
   type OrthogonalPathResult,
 } from "./pathBuilder";
+
+// Channel routing
+export {
+  type EdgeChannel,
+  buildMergedChannelPath,
+} from "./channelRouting";

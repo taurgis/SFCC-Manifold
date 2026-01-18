@@ -3,11 +3,13 @@
  *
  * Main orchestration module that builds orthogonal paths between nodes.
  * Delegates to specialized modules for specific routing strategies.
+ * Supports channel-based routing for cleaner multi-edge paths.
  */
 
 import type { PlacedNode, Point, BendPoint } from "../types";
 import { LAYOUT_CONFIG } from "../constants";
 import type { Segment } from "./collision";
+import type { ChannelRegistry } from "./channelRouting";
 
 // Re-export from sub-modules for backward compatibility
 export {
@@ -42,10 +44,13 @@ export {
   routeTopToBottom,
 } from "./directionRouting";
 
+export { ChannelRegistry } from "./channelRouting";
+
 // Import from sub-modules for internal use
 import { filterOnPathWaypoints } from "./waypoints";
 import { buildAutoRoutedPath } from "./autoRouting";
 import { buildBendpointPath, buildSingleWaypointPath } from "./bendpointRouting";
+import type { BendpointPathResult } from "./bendpointRouting";
 import { ensureMinFinalSegment } from "./pathUtils";
 import {
   routeBottomToTop,
@@ -76,6 +81,8 @@ export interface OrthogonalPathResult {
  * Build orthogonal path between points
  * Uses XML bendpoints when available, otherwise falls back to smart routing
  * Returns both the path points and any calculated waypoints for visualization
+ *
+ * @param channelRegistry - Optional channel registry for merging parallel edges
  */
 export function buildOrthogonalPath(
   start: Point,
@@ -89,7 +96,8 @@ export function buildOrthogonalPath(
   endOffset: number,
   nodeMap: Record<string, PlacedNode>,
   blockingNode: PlacedNode | null,
-  occupiedSegments: Segment[]
+  occupiedSegments: Segment[],
+  channelRegistry?: ChannelRegistry
 ): number[] | OrthogonalPathResult {
   const points = [start.x, start.y];
   const dx = end.x - start.x;
@@ -118,12 +126,9 @@ export function buildOrthogonalPath(
       const targetWaypointY =
         toNode.y + nodeHeight / 2 + targetBend.y * verticalGap;
 
-      // Store waypoints for visualization
-      calculatedWaypoints.push({ x: sourceWaypointX, y: sourceWaypointY });
-      calculatedWaypoints.push({ x: targetWaypointX, y: targetWaypointY });
-
       // Build path using waypoints with orthogonal routing
-      buildBendpointPath(
+      // The function returns actual waypoints used (may differ from XML due to optimization)
+      const result: BendpointPathResult = buildBendpointPath(
         points,
         start,
         end,
@@ -134,6 +139,9 @@ export function buildOrthogonalPath(
         outSide,
         inSide
       );
+
+      // Use actual waypoints from the optimized path for visualization
+      calculatedWaypoints.push(...result.actualWaypoints);
     } else if (sourceBend) {
       // Only source bendpoint - route through it
       const waypointX =
@@ -222,7 +230,8 @@ export function buildOrthogonalPath(
       outSide,
       inSide,
       nodeMap,
-      occupiedSegments
+      occupiedSegments,
+      channelRegistry
     );
 
     if (autoRouted) {

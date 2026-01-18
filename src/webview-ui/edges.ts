@@ -20,6 +20,7 @@ import {
   buildBackEdgePath,
   buildOrthogonalPath,
   pointsToSegments,
+  ChannelRegistry,
   type Segment,
 } from "./edges/index";
 
@@ -307,6 +308,7 @@ export function drawEdges(
   const outCounts: Record<string, number> = {};
   const inCounts: Record<string, number> = {};
   const occupiedSegments: Segment[] = [];
+  const channelRegistry = new ChannelRegistry();
 
   function incCount(map: Record<string, number>, key: string): void {
     map[key] = (map[key] || 0) + 1;
@@ -424,7 +426,8 @@ export function drawEdges(
         inOffset,
         nodeMap,
         blockingNode,
-        occupiedSegments
+        occupiedSegments,
+        channelRegistry
       );
 
       // Handle both return types: plain number[] or OrthogonalPathResult
@@ -452,6 +455,9 @@ export function drawEdges(
       waypoints
     );
 
-    occupiedSegments.push(...pointsToSegments(points));
+    // Register edge segments and channels for subsequent edges
+    const segments = pointsToSegments(points);
+    occupiedSegments.push(...segments);
+    channelRegistry.registerEdge(segments, toNode.id, inSide);
   }
 }

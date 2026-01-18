@@ -10,7 +10,20 @@ import { bendpointPathHasCollision } from "./nodeCollision";
 import { buildAutoRoutedPath } from "./autoRouting";
 
 /**
- * Build path through source and target waypoints using orthogonal segments
+ * Result from buildBendpointPath including actual waypoints used
+ */
+export interface BendpointPathResult {
+  /** The actual waypoints where the path turns (for visualization) */
+  actualWaypoints: Point[];
+}
+
+/**
+ * Build path through source and target waypoints using orthogonal segments.
+ * Optimizes routing based on both exit side (outSide) and entry side (inSide)
+ * to avoid unnecessary detours.
+ * 
+ * Returns the actual waypoint positions used (which may differ from XML bendpoints
+ * due to routing optimization).
  */
 export function buildBendpointPath(
   points: number[],
@@ -21,28 +34,142 @@ export function buildBendpointPath(
   tgtWpX: number,
   tgtWpY: number,
   outSide: string,
-  _inSide: string
-): void {
-  // Exit horizontally or vertically based on outSide
+  inSide: string
+): BendpointPathResult {
+  const actualWaypoints: Point[] = [];
+
+  // Exit horizontally (right or left)
   if (outSide === "right" || outSide === "left") {
-    // First segment: horizontal from start
-    points.push(srcWpX, start.y);
-    // Second segment: vertical to target approach height
-    points.push(srcWpX, tgtWpY);
-    // Third segment: horizontal to target x
-    if (Math.abs(srcWpX - end.x) > 5) {
-      points.push(end.x, tgtWpY);
+    if (inSide === "right" || inSide === "left") {
+      // Both horizontal exit and entry
+      // Determine the optimal channel X based on direction of travel
+
+      // For right-side entry, we must approach from the right (larger X)
+      // For left-side entry, we must approach from the left (smaller X)
+      let channelX: number;
+
+      if (inSide === "right") {
+        // Entry from right - channel must be to the right of the entry point
+        // Use the maximum of the waypoints, but ensure it's >= end.x + some margin
+        channelX = Math.max(srcWpX, tgtWpX, end.x + 30);
+      } else {
+        // Entry from left - channel must be to the left of the entry point
+        channelX = Math.min(srcWpX, tgtWpX, end.x - 30);
+      }
+
+      // For the exit side, ensure we actually go in that direction first
+      if (outSide === "right" && channelX < start.x) {
+        // Exiting right but channel is to the left - need to go right first
+        channelX = Math.max(channelX, start.x + 30);
+      } else if (outSide === "left" && channelX > start.x) {
+        // Exiting left but channel is to the right - need to go left first
+        channelX = Math.min(channelX, start.x - 30);
+      }
+
+      // First segment: horizontal to channel
+      points.push(channelX, start.y);
+      // Second segment: vertical down/up the channel to align with entry
+      points.push(channelX, end.y);
+      
+      // Record actual waypoints at the corners (where path turns)
+      // First corner: horizontal to vertical turn
+      actualWaypoints.push({ x: channelX, y: start.y });
+      // Second corner: vertical to horizontal turn  
+      actualWaypoints.push({ x: channelX, y: end.y });
+      // End point (horizontal back to anchor) is handled by caller pushing end
+    } else if (inSide === "top" || inSide === "bottom") {
+      // Horizontal exit to vertical entry
+      // Go horizontal to waypoint, then vertical to approach the target
+      points.push(srcWpX, start.y);
+
+      // For top entry, approach from above; for bottom, from below
+      const approachY =
+        inSide === "top"
+          ? Math.min(srcWpY, tgtWpY, end.y - 30)
+          : Math.max(srcWpY, tgtWpY, end.y + 30);
+
+      if (Math.abs(srcWpX - end.x) > 5) {
+        // Need to move horizontally to align with target
+        points.push(srcWpX, approachY);
+        points.push(end.x, approachY);
+      } else {
+        points.push(srcWpX, approachY);
+        points.push(end.x, approachY);
+      }
+      // Record waypoint at the turn
+      actualWaypoints.push({ x: srcWpX, y: approachY });
+    } else {
+      // Default horizontal exit routing
+      points.push(srcWpX, start.y);
+      points.push(srcWpX, tgtWpY);
+      if (Math.abs(srcWpX - end.x) > 5) {
+        points.push(end.x, tgtWpY);
+      }
+      // Record waypoint
+      actualWaypoints.push({ x: srcWpX, y: tgtWpY });
     }
   } else {
-    // First segment: vertical from start
-    points.push(start.x, srcWpY);
-    // Second segment: horizontal to target approach
-    points.push(tgtWpX, srcWpY);
-    // Third segment: vertical to target
-    if (Math.abs(srcWpY - end.y) > 5) {
-      points.push(tgtWpX, end.y);
+    // Exit vertically (top or bottom)
+    if (inSide === "top" || inSide === "bottom") {
+      // Both vertical exit and entry
+      let channelY: number;
+
+      if (inSide === "top") {
+        // Entry from top - channel must be above the entry point
+        channelY = Math.min(srcWpY, tgtWpY, end.y - 30);
+      } else {
+        // Entry from bottom - channel must be below the entry point
+        channelY = Math.max(srcWpY, tgtWpY, end.y + 30);
+      }
+
+      // Ensure we go in the exit direction first
+      if (outSide === "bottom" && channelY < start.y) {
+        channelY = Math.max(channelY, start.y + 30);
+      } else if (outSide === "top" && channelY > start.y) {
+        channelY = Math.min(channelY, start.y - 30);
+      }
+
+      // First segment: vertical to channel
+      points.push(start.x, channelY);
+      // Second segment: horizontal along the channel
+      points.push(end.x, channelY);
+      
+      // Record actual waypoints at the corners
+      actualWaypoints.push({ x: start.x, y: channelY });
+      actualWaypoints.push({ x: end.x, y: channelY });
+      // End point is added by caller
+    } else if (inSide === "right" || inSide === "left") {
+      // Vertical exit to horizontal entry
+      points.push(start.x, srcWpY);
+
+      // For right entry, approach from the right; for left, from left
+      const approachX =
+        inSide === "right"
+          ? Math.max(srcWpX, tgtWpX, end.x + 30)
+          : Math.min(srcWpX, tgtWpX, end.x - 30);
+
+      if (Math.abs(srcWpY - end.y) > 5) {
+        points.push(approachX, srcWpY);
+        points.push(approachX, end.y);
+      } else {
+        points.push(approachX, srcWpY);
+        points.push(approachX, end.y);
+      }
+      // Record waypoint
+      actualWaypoints.push({ x: approachX, y: srcWpY });
+    } else {
+      // Default vertical exit routing
+      points.push(start.x, srcWpY);
+      points.push(tgtWpX, srcWpY);
+      if (Math.abs(srcWpY - end.y) > 5) {
+        points.push(tgtWpX, end.y);
+      }
+      // Record waypoint
+      actualWaypoints.push({ x: tgtWpX, y: srcWpY });
     }
   }
+
+  return { actualWaypoints };
 }
 
 /**
