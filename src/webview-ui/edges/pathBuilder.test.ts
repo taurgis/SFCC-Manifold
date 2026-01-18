@@ -41,6 +41,10 @@ function createNode(
     type: type as PlacedNode["type"],
     branch: "Start",
     attributes: {},
+    configProperties: [],
+    bindings: [],
+    template: null,
+    description: null,
     x,
     y,
   };
@@ -193,8 +197,8 @@ describe("buildAutoRoutedPath", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.length).toBeGreaterThan(0);
-    expect(result!.length % 2).toBe(0); // x,y pairs
+    expect(result?.length).toBeGreaterThan(0);
+    expect((result?.length ?? 0) % 2).toBe(0); // x,y pairs
   });
 
   it("should handle occupied segments", () => {
@@ -1506,7 +1510,7 @@ describe("isWaypointMeaningful", () => {
     const pathPoints = [50, 50, 100, 50, 100, 150, 200, 150];
     // Corner is at (100, 50) and (100, 150)
     const waypoint = { x: 105, y: 55 }; // Near first corner
-    
+
     expect(isWaypointMeaningful(waypoint, pathPoints, nodeMap)).toBe(true);
   });
 

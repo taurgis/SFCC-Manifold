@@ -21,6 +21,10 @@ function createMockNode(x: number, y: number, type: string = "pipelet"): PlacedN
     type: type as PlacedNode["type"],
     branch: "Start",
     attributes: {},
+    configProperties: [],
+    bindings: [],
+    template: null,
+    description: null,
     x,
     y,
   };

@@ -5,7 +5,7 @@
  */
 
 // Konva is loaded globally via script tag
-const Konva = (window as any).Konva;
+const Konva = (window as unknown as { Konva: typeof import("konva").default }).Konva;
 
 export default Konva;
 export { Konva };

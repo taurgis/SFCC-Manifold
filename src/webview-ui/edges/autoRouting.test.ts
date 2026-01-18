@@ -21,12 +21,16 @@ function createNode(
 ): PlacedNode {
   return {
     id,
-    name: id,
-    type,
+    label: id,
+    type: type as PlacedNode["type"],
+    branch: "Start",
+    attributes: {},
+    configProperties: [],
+    bindings: [],
+    template: null,
+    description: null,
     x,
     y,
-    col: 0,
-    row: 0,
   };
 }
 
@@ -55,13 +59,13 @@ describe("autoRouting", () => {
       );
 
       expect(result).not.toBeNull();
-      expect(result!.length).toBeGreaterThan(0);
+      expect(result?.length).toBeGreaterThan(0);
       // Should start at start point
-      expect(result![0]).toBe(start.x);
-      expect(result![1]).toBe(start.y);
+      expect(result?.[0]).toBe(start.x);
+      expect(result?.[1]).toBe(start.y);
       // Should end at end point
-      expect(result![result!.length - 2]).toBe(end.x);
-      expect(result![result!.length - 1]).toBe(end.y);
+      expect(result?.[result.length - 2]).toBe(end.x);
+      expect(result?.[result.length - 1]).toBe(end.y);
     });
 
     it("routes around obstacles", () => {

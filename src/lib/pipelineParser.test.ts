@@ -109,9 +109,9 @@ describe("parsePipeline", () => {
       expect(result.nodes[0].type).toBe("pipelet");
       expect(result.nodes[0].label).toBe("Script");
       expect(result.nodes[0].configProperties).toHaveLength(2);
-      expect(result.nodes[0].configProperties![0]).toEqual({ key: "ScriptFile", value: "test.ds" });
+      expect(result.nodes[0].configProperties?.[0]).toEqual({ key: "ScriptFile", value: "test.ds" });
       expect(result.nodes[0].bindings).toHaveLength(2);
-      expect(result.nodes[0].bindings![0]).toEqual({ key: "Input", alias: "MyInput" });
+      expect(result.nodes[0].bindings?.[0]).toEqual({ key: "Input", alias: "MyInput" });
     });
 
     it("should parse call-node", () => {
@@ -326,8 +326,8 @@ describe("parsePipeline", () => {
 
       const result = parsePipeline(xml);
       expect(result.edges[0].display).toBeDefined();
-      expect(result.edges[0].display!.bendPoints).toHaveLength(2);
-      expect(result.edges[0].display!.bendPoints[0]).toEqual({
+      expect(result.edges[0].display?.bendPoints).toHaveLength(2);
+      expect(result.edges[0].display?.bendPoints[0]).toEqual({
         relativeTo: "source",
         x: 1,
         y: 0,
@@ -412,7 +412,7 @@ describe("parsePipeline", () => {
       const result = parsePipeline(xml);
       const crossBranchEdge = result.edges.find((e) => e.from === "Start:0:0");
       expect(crossBranchEdge).toBeDefined();
-      expect(crossBranchEdge!.to).toBe("End:0:0");
+      expect(crossBranchEdge?.to).toBe("End:0:0");
     });
   });
 
@@ -431,10 +431,10 @@ describe("parsePipeline", () => {
 
       const result = parsePipeline(xml);
       expect(result.nodes[0].position).toBeDefined();
-      expect(result.nodes[0].position!.x).toBe(5);
-      expect(result.nodes[0].position!.y).toBe(10);
-      expect(result.nodes[0].position!.width).toBe(200);
-      expect(result.nodes[0].position!.orientation).toBe("horizontal");
+      expect(result.nodes[0].position?.x).toBe(5);
+      expect(result.nodes[0].position?.y).toBe(10);
+      expect(result.nodes[0].position?.width).toBe(200);
+      expect(result.nodes[0].position?.orientation).toBe("horizontal");
     });
 
     it("should handle nodes without display position", () => {
@@ -715,8 +715,8 @@ describe("parsePipeline", () => {
 
       const result = parsePipeline(xml);
       expect(result.nodes[0].configProperties).toHaveLength(1);
-      expect(result.nodes[0].configProperties![0].key).toBe("EmptyValue");
-      expect(result.nodes[0].configProperties![0].value).toBe("");
+      expect(result.nodes[0].configProperties?.[0].key).toBe("EmptyValue");
+      expect(result.nodes[0].configProperties?.[0].value).toBe("");
     });
 
     it("should handle key-binding with null alias", () => {
@@ -735,8 +735,8 @@ describe("parsePipeline", () => {
 
       const result = parsePipeline(xml);
       expect(result.nodes[0].bindings).toHaveLength(1);
-      expect(result.nodes[0].bindings![0].key).toBe("InputKey");
-      expect(result.nodes[0].bindings![0].alias).toBe("");
+      expect(result.nodes[0].bindings?.[0].key).toBe("InputKey");
+      expect(result.nodes[0].bindings?.[0].alias).toBe("");
     });
   });
 
@@ -909,8 +909,8 @@ describe("parsePipeline", () => {
       const result = parsePipeline(xml);
       // Missing x/y defaults to 0,0 which is valid
       expect(result.edges[0].display).toBeDefined();
-      expect(result.edges[0].display!.bendPoints[0].x).toBe(0);
-      expect(result.edges[0].display!.bendPoints[0].y).toBe(0);
+      expect(result.edges[0].display?.bendPoints[0].x).toBe(0);
+      expect(result.edges[0].display?.bendPoints[0].y).toBe(0);
     });
   });
 

@@ -46,10 +46,10 @@ describe("aStarRoute", () => {
     const path = aStarRoute(start, end, [], defaultBounds);
 
     expect(path).not.toBeNull();
-    expect(path!.length).toBeGreaterThan(0);
+    expect(path?.length).toBeGreaterThan(0);
     // Path should start near start and end near end
-    expect(path![0].x).toBeCloseTo(snapToGrid(start.x), 0);
-    expect(path![path!.length - 1].x).toBeCloseTo(snapToGrid(end.x), 0);
+    expect(path?.[0].x).toBeCloseTo(snapToGrid(start.x), 0);
+    expect(path?.[path.length - 1].x).toBeCloseTo(snapToGrid(end.x), 0);
   });
 
   it("should find a path around obstacles", () => {
@@ -62,7 +62,7 @@ describe("aStarRoute", () => {
     const path = aStarRoute(start, end, obstacles, defaultBounds);
 
     expect(path).not.toBeNull();
-    expect(path!.length).toBeGreaterThan(2); // Should have detour points
+    expect(path?.length).toBeGreaterThan(2); // Should have detour points
   });
 
   it("should return null when no path exists", () => {
@@ -103,7 +103,7 @@ describe("aStarRoute", () => {
     const path = aStarRoute(start, end, [], defaultBounds);
 
     expect(path).not.toBeNull();
-    expect(path!.length).toBe(1);
+    expect(path?.length).toBe(1);
   });
 });
 

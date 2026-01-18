@@ -186,10 +186,10 @@ export function setupFloatingPanels(): void {
   }
 
   function closeAllPanels(): void {
-    infoPanel!.classList.remove("visible");
-    legendPanel!.classList.remove("visible");
-    infoToggle!.classList.remove("active");
-    legendToggle!.classList.remove("active");
+    if (infoPanel) {infoPanel.classList.remove("visible");}
+    if (legendPanel) {legendPanel.classList.remove("visible");}
+    if (infoToggle) {infoToggle.classList.remove("active");}
+    if (legendToggle) {legendToggle.classList.remove("active");}
   }
 
   function togglePanel(

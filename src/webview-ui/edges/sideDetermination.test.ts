@@ -22,6 +22,10 @@ function createNode(
     type: type as PlacedNode["type"],
     branch: "Start",
     attributes: {},
+    configProperties: [],
+    bindings: [],
+    template: null,
+    description: null,
     x,
     y,
   };

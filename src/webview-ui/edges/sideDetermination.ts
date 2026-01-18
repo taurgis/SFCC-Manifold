@@ -26,6 +26,7 @@ export function setDebugLogging(enabled: boolean): void {
  */
 function debugLog(message: string): void {
   if (debugLogging) {
+    // eslint-disable-next-line no-console
     console.log(message);
   }
 }

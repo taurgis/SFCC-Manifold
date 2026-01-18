@@ -91,8 +91,11 @@ class MinHeap {
     if (this.heap.length === 1) {return this.heap.pop();}
 
     const min = this.heap[0];
-    this.heap[0] = this.heap.pop()!;
-    this.bubbleDown(0);
+    const last = this.heap.pop();
+    if (last !== undefined) {
+      this.heap[0] = last;
+      this.bubbleDown(0);
+    }
     return min;
   }
 

@@ -39,6 +39,7 @@ function initialize(): void {
   const startNode = (window as any).initialStartNode as string | undefined;
 
   if (!data) {
+    // eslint-disable-next-line no-console
     console.error("No pipeline data found");
     return;
   }
@@ -71,7 +72,7 @@ function initialize(): void {
   // Initialize Konva
   const konva = initializeStage("konva-container");
   const { stage, layer, gridLayer } = konva;
-  const container = document.getElementById("konva-container")!;
+  const container = document.getElementById("konva-container") as HTMLElement;
 
   // Expose stage and layer globally
   window.pipelineStage = stage;

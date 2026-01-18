@@ -16,6 +16,10 @@ function createNode(
     type: type as PipelineNode["type"],
     branch,
     attributes: {},
+    configProperties: [],
+    bindings: [],
+    template: null,
+    description: null,
     position: x !== undefined ? { x, y } : undefined,
   };
 }
@@ -135,7 +139,7 @@ describe("calculateLayout", () => {
       const result = calculateLayout(nodes, { preserveGrid: true });
 
       // After normalization, minimum should be 0
-      const minGridX = Math.min(...result.map((n) => n.gridX!));
+      const minGridX = Math.min(...result.map((n) => n.gridX ?? 0));
       expect(minGridX).toBe(0);
     });
   });
@@ -151,6 +155,8 @@ describe("calculateLayout", () => {
           attributes: { key: "value" },
           configProperties: [{ key: "Script", value: "test.ds" }],
           bindings: [{ key: "Input", alias: "MyInput" }],
+          template: null,
+          description: null,
           position: { x: 0, y: 0, orientation: "vertical" },
         },
       ];
@@ -171,8 +177,8 @@ describe("calculateLayout", () => {
   describe("fallback layout", () => {
     it("should handle nodes without position data", () => {
       const nodes: PipelineNode[] = [
-        { id: "n1", label: "Node 1", type: "start", branch: "Start", attributes: {} },
-        { id: "n2", label: "Node 2", type: "end", branch: "Start", attributes: {} },
+        { id: "n1", label: "Node 1", type: "start", branch: "Start", attributes: {}, configProperties: [], bindings: [], template: null, description: null },
+        { id: "n2", label: "Node 2", type: "end", branch: "Start", attributes: {}, configProperties: [], bindings: [], template: null, description: null },
       ];
 
       const result = calculateLayout(nodes);
@@ -337,6 +343,10 @@ describe("calculateLayout - additional scenarios", () => {
           type: "pipelet",
           branch: "Start",
           attributes: {},
+          configProperties: [],
+          bindings: [],
+          template: null,
+          description: null,
           position: { x: 0, y: 0, orientation: "horizontal" },
         },
       ];
@@ -372,14 +382,17 @@ describe("calculateLayout - additional scenarios", () => {
           type: "pipelet",
           branch: "Start",
           attributes: {},
-          template: "My Template",
+          configProperties: [],
+          bindings: [],
+          template: { name: "My Template" },
+          description: null,
           position: { x: 0, y: 0 },
         },
       ];
 
       const result = calculateLayout(nodes);
 
-      expect(result[0].template).toBe("My Template");
+      expect(result[0].template).toEqual({ name: "My Template" });
     });
 
     it("should preserve description property", () => {
@@ -390,6 +403,9 @@ describe("calculateLayout - additional scenarios", () => {
           type: "pipelet",
           branch: "Start",
           attributes: {},
+          configProperties: [],
+          bindings: [],
+          template: null,
           description: "My Description",
           position: { x: 0, y: 0 },
         },
@@ -408,6 +424,8 @@ describe("calculateLayout - additional scenarios", () => {
           type: "pipelet",
           branch: "Start",
           attributes: {},
+          configProperties: [],
+          bindings: [],
           template: null,
           description: null,
           position: { x: 0, y: 0 },

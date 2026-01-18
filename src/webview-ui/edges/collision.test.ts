@@ -22,6 +22,10 @@ function createNode(id: string, x: number, y: number): PlacedNode {
     type: "pipelet",
     branch: "Start",
     attributes: {},
+    configProperties: [],
+    bindings: [],
+    template: null,
+    description: null,
     x,
     y,
   };
@@ -52,7 +56,7 @@ describe("lineIntersectsNode", () => {
 
     const result = lineIntersectsNode(0, 50, 300, 50, nodeMap, "n1", "n2");
     expect(result).toBeDefined();
-    expect(result!.id).toBe("blocker");
+    expect(result?.id).toBe("blocker");
   });
 
   it("should detect vertical line intersection", () => {
@@ -64,7 +68,7 @@ describe("lineIntersectsNode", () => {
 
     const result = lineIntersectsNode(50, 0, 50, 300, nodeMap, "n1", "n2");
     expect(result).toBeDefined();
-    expect(result!.id).toBe("blocker");
+    expect(result?.id).toBe("blocker");
   });
 
   it("should exclude source and target nodes from collision", () => {

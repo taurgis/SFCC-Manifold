@@ -13,7 +13,7 @@ export function initializeStage(containerId: string): {
   gridLayer: Konva.Layer;
   containerRect: DOMRect;
 } {
-  const container = document.getElementById(containerId)!;
+  const container = document.getElementById(containerId) as HTMLElement;
   const containerRect = container.getBoundingClientRect();
 
   const stage = new Konva.Stage({

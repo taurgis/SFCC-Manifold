@@ -20,12 +20,16 @@ function createNode(
 ): PlacedNode {
   return {
     id,
-    name: id,
-    type,
+    label: id,
+    type: type as PlacedNode["type"],
+    branch: "Start",
+    attributes: {},
+    configProperties: [],
+    bindings: [],
+    template: null,
+    description: null,
     x,
     y,
-    col: 0,
-    row: 0,
   };
 }
 

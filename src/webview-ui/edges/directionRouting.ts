@@ -74,8 +74,8 @@ export function routeBottomToTop(
         toNode.id
       );
       if (vertBlocker1 || vertBlocker2) {
-        const blocker = vertBlocker1 || vertBlocker2;
-        const clearX = blocker!.x + nodeWidth + 25;
+        const blocker = (vertBlocker1 || vertBlocker2) as PlacedNode;
+        const clearX = blocker.x + nodeWidth + 25;
         points.push(clearX, start.y);
         points.push(clearX, end.y);
       } else {

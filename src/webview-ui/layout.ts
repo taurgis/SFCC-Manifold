@@ -136,8 +136,8 @@ export function calculateLayout(
 
     // Convert grid coordinates to pixel coordinates
     for (const n of placedNodes) {
-      const normalizedGridX = n.gridX! - minGridX;
-      const normalizedGridY = n.gridY! - minGridY;
+      const normalizedGridX = (n.gridX ?? 0) - minGridX;
+      const normalizedGridY = (n.gridY ?? 0) - minGridY;
 
       n.x = baseX + (normalizedGridX * horizontalGap);
       n.y = baseY + (normalizedGridY * verticalGap);
@@ -151,6 +151,7 @@ export function calculateLayout(
       }
     }
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.error("Layout error:", e);
     // Fallback to simple grid layout
     placedNodes = nodes.map((node, i) => ({

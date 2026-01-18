@@ -109,8 +109,8 @@ export function buildOrthogonalPath(
 
   if (hasBendPoints) {
     // Use bendpoints to guide routing
-    const sourceBend = bendPoints!.find((bp) => bp.relativeTo === "source");
-    const targetBend = bendPoints!.find((bp) => bp.relativeTo === "target");
+    const sourceBend = bendPoints.find((bp) => bp.relativeTo === "source");
+    const targetBend = bendPoints.find((bp) => bp.relativeTo === "target");
 
     // Convert grid-based bendpoints to pixel waypoints
     if (sourceBend && targetBend) {
