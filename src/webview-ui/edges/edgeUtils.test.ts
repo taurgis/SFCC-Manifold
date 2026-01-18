@@ -4,6 +4,8 @@ import {
   isErrorEdge,
   inferExitSideFromBendpoints,
   inferEntrySideFromBendpoints,
+  getSourceBendpoints,
+  getTargetBendpoints,
 } from "./edgeUtils";
 import type { BendPoint } from "../types";
 
@@ -148,5 +150,72 @@ describe("inferEntrySideFromBendpoints", () => {
   it("should return null for zero values", () => {
     const bendPoints: BendPoint[] = [{ relativeTo: "target", x: 0, y: 0 }];
     expect(inferEntrySideFromBendpoints(bendPoints)).toBeNull();
+  });
+
+  it("should use closest bendpoint when multiple target bendpoints exist", () => {
+    // Multiple target bendpoints: (0,-2) and (0,-1)
+    // Should use (0,-1) as it's closest to target
+    const bendPoints: BendPoint[] = [
+      { relativeTo: "target", x: 0, y: -2 },
+      { relativeTo: "target", x: 0, y: -1 },
+    ];
+    expect(inferEntrySideFromBendpoints(bendPoints)).toBe("top");
+  });
+});
+
+describe("getSourceBendpoints", () => {
+  it("should return empty array for undefined/empty bendpoints", () => {
+    expect(getSourceBendpoints(undefined)).toEqual([]);
+    expect(getSourceBendpoints([])).toEqual([]);
+  });
+
+  it("should filter only source bendpoints", () => {
+    const bendPoints: BendPoint[] = [
+      { relativeTo: "source", x: 1, y: 0 },
+      { relativeTo: "target", x: 0, y: -1 },
+      { relativeTo: "source", x: 2, y: 1 },
+    ];
+    const result = getSourceBendpoints(bendPoints);
+    expect(result).toHaveLength(2);
+    expect(result.every(bp => bp.relativeTo === "source")).toBe(true);
+  });
+
+  it("should sort by distance from source (closest first)", () => {
+    const bendPoints: BendPoint[] = [
+      { relativeTo: "source", x: 3, y: 0 }, // distance 3
+      { relativeTo: "source", x: 1, y: 0 }, // distance 1
+      { relativeTo: "source", x: 2, y: 1 }, // distance 3
+    ];
+    const result = getSourceBendpoints(bendPoints);
+    expect(result[0].x).toBe(1);
+    expect(result[0].y).toBe(0);
+  });
+});
+
+describe("getTargetBendpoints", () => {
+  it("should return empty array for undefined/empty bendpoints", () => {
+    expect(getTargetBendpoints(undefined)).toEqual([]);
+    expect(getTargetBendpoints([])).toEqual([]);
+  });
+
+  it("should filter only target bendpoints", () => {
+    const bendPoints: BendPoint[] = [
+      { relativeTo: "source", x: 1, y: 0 },
+      { relativeTo: "target", x: 0, y: -1 },
+      { relativeTo: "target", x: 0, y: -2 },
+    ];
+    const result = getTargetBendpoints(bendPoints);
+    expect(result).toHaveLength(2);
+    expect(result.every(bp => bp.relativeTo === "target")).toBe(true);
+  });
+
+  it("should sort by distance from target (closest first)", () => {
+    const bendPoints: BendPoint[] = [
+      { relativeTo: "target", x: 0, y: -2 }, // distance 2
+      { relativeTo: "target", x: 0, y: -1 }, // distance 1
+    ];
+    const result = getTargetBendpoints(bendPoints);
+    expect(result[0].y).toBe(-1);
+    expect(result[1].y).toBe(-2);
   });
 });

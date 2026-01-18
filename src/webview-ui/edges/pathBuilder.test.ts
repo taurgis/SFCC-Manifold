@@ -19,6 +19,8 @@ import {
   routeLeftToBottom,
   routeRightToLeft,
   routeLeftToRight,
+  pathSegmentHitsNode,
+  bendpointPathHasCollision,
   type OrthogonalPathResult,
 } from "./pathBuilder";
 import type { PlacedNode, BendPoint } from "../types";
@@ -2695,5 +2697,110 @@ describe("buildOrthogonalPath fallback routes (forcing fallback scenarios)", () 
         expect(result.waypoints.length).toBeGreaterThanOrEqual(0);
       }
     });
+  });
+});
+
+describe("pathSegmentHitsNode", () => {
+  it("should return null when segment does not hit any node", () => {
+    const node = createNode("n1", 200, 200);
+    const nodeMap: Record<string, PlacedNode> = { n1: node };
+
+    // Segment from (0, 0) to (100, 100) - doesn't touch node at (200, 200)
+    const result = pathSegmentHitsNode(0, 0, 100, 100, nodeMap, []);
+
+    expect(result).toBeNull();
+  });
+
+  it("should return blocking node when segment crosses through a node", () => {
+    const node = createNode("n1", 100, 100);
+    const nodeMap: Record<string, PlacedNode> = { n1: node };
+
+    // Horizontal segment that passes through the node
+    const result = pathSegmentHitsNode(50, 140, 300, 140, nodeMap, []);
+
+    expect(result).not.toBeNull();
+    expect(result?.id).toBe("n1");
+  });
+
+  it("should exclude nodes in the excludeIds list", () => {
+    const node = createNode("n1", 100, 100);
+    const nodeMap: Record<string, PlacedNode> = { n1: node };
+
+    // Segment that would hit the node
+    const result = pathSegmentHitsNode(50, 140, 300, 140, nodeMap, ["n1"]);
+
+    expect(result).toBeNull();
+  });
+
+  it("should detect collision with vertical segment", () => {
+    const node = createNode("n1", 100, 100);
+    const nodeMap: Record<string, PlacedNode> = { n1: node };
+
+    // Vertical segment that passes through the node
+    const result = pathSegmentHitsNode(150, 50, 150, 250, nodeMap, []);
+
+    expect(result).not.toBeNull();
+    expect(result?.id).toBe("n1");
+  });
+
+  it("should detect collision near node edge (within padding)", () => {
+    const node = createNode("n1", 100, 100);
+    const nodeMap: Record<string, PlacedNode> = { n1: node };
+
+    // Segment at x=95, which is 5 pixels left of node and within 10px padding
+    const result = pathSegmentHitsNode(95, 140, 95, 200, nodeMap, []);
+
+    expect(result).not.toBeNull();
+  });
+});
+
+describe("bendpointPathHasCollision", () => {
+  it("should return false when path has no collisions", () => {
+    const node = createNode("n1", 500, 500);
+    const nodeMap: Record<string, PlacedNode> = { n1: node };
+
+    // Simple L-shaped path that doesn't touch the node
+    const pathPoints = [0, 0, 100, 0, 100, 100, 200, 100];
+
+    const result = bendpointPathHasCollision(pathPoints, nodeMap, "from", "to");
+
+    expect(result).toBe(false);
+  });
+
+  it("should return true when a path segment collides with a node", () => {
+    const node = createNode("n1", 100, 50);
+    const nodeMap: Record<string, PlacedNode> = { n1: node };
+
+    // Path that goes through the node
+    const pathPoints = [0, 80, 300, 80];
+
+    const result = bendpointPathHasCollision(pathPoints, nodeMap, "from", "to");
+
+    expect(result).toBe(true);
+  });
+
+  it("should exclude source and target nodes from collision check", () => {
+    const fromNode = createNode("from", 0, 0);
+    const toNode = createNode("to", 200, 0);
+    const nodeMap: Record<string, PlacedNode> = { from: fromNode, to: toNode };
+
+    // Path that goes through both source and target nodes
+    const pathPoints = [90, 40, 290, 40];
+
+    const result = bendpointPathHasCollision(pathPoints, nodeMap, "from", "to");
+
+    expect(result).toBe(false);
+  });
+
+  it("should detect collision on any segment of multi-segment path", () => {
+    const node = createNode("blocker", 150, 100);
+    const nodeMap: Record<string, PlacedNode> = { blocker: node };
+
+    // L-shaped path where second segment hits the node
+    const pathPoints = [0, 0, 0, 140, 300, 140];
+
+    const result = bendpointPathHasCollision(pathPoints, nodeMap, "from", "to");
+
+    expect(result).toBe(true);
   });
 });

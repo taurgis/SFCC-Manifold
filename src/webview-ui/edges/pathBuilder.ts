@@ -230,7 +230,71 @@ function buildBendpointPath(
 }
 
 /**
- * Build path through a single waypoint
+ * Check if a proposed path segment intersects any node (excluding source/target).
+ * Returns the blocking node if found, otherwise null.
+ * @internal Exported for testing
+ */
+export function pathSegmentHitsNode(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  nodeMap: Record<string, PlacedNode>,
+  excludeIds: string[]
+): PlacedNode | null {
+  const padding = 10; // Small padding to detect near-misses
+  const minX = Math.min(x1, x2);
+  const maxX = Math.max(x1, x2);
+  const minY = Math.min(y1, y2);
+  const maxY = Math.max(y1, y2);
+
+  for (const node of Object.values(nodeMap)) {
+    if (excludeIds.includes(node.id)) {continue;}
+
+    const nodeLeft = node.x - padding;
+    const nodeRight = node.x + nodeWidth + padding;
+    const nodeTop = node.y - padding;
+    const nodeBottom = node.y + nodeHeight + padding;
+
+    // Check if segment overlaps with node bounding box
+    const segmentOverlapsX = maxX >= nodeLeft && minX <= nodeRight;
+    const segmentOverlapsY = maxY >= nodeTop && minY <= nodeBottom;
+
+    if (segmentOverlapsX && segmentOverlapsY) {
+      return node;
+    }
+  }
+  return null;
+}
+
+/**
+ * Check if an entire bendpoint path collides with any nodes.
+ * @internal Exported for testing
+ */
+export function bendpointPathHasCollision(
+  proposedPoints: number[],
+  nodeMap: Record<string, PlacedNode>,
+  fromNodeId: string,
+  toNodeId: string
+): boolean {
+  const excludeIds = [fromNodeId, toNodeId];
+  // Check each segment of the path
+  for (let i = 0; i < proposedPoints.length - 2; i += 2) {
+    const x1 = proposedPoints[i];
+    const y1 = proposedPoints[i + 1];
+    const x2 = proposedPoints[i + 2];
+    const y2 = proposedPoints[i + 3];
+
+    if (pathSegmentHitsNode(x1, y1, x2, y2, nodeMap, excludeIds)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Build path through a single waypoint.
+ * Returns true if path was built successfully, false if collision detected.
  */
 function buildSingleWaypointPath(
   points: number[],
@@ -239,66 +303,83 @@ function buildSingleWaypointPath(
   wpX: number,
   wpY: number,
   outSide: string,
-  inSide: string
-): void {
+  inSide: string,
+  nodeMap: Record<string, PlacedNode>,
+  fromNodeId: string,
+  toNodeId: string
+): boolean {
   const minApproachDistance = 30; // Minimum distance for arrow visibility
+  const proposedPoints: number[] = [start.x, start.y];
 
   if (outSide === "right" || outSide === "left") {
     // Exit horizontally
-    points.push(wpX, start.y);
+    proposedPoints.push(wpX, start.y);
 
     if (inSide === "top") {
       // Need to approach from above - ensure enough vertical space
       const approachY = end.y - minApproachDistance;
       if (start.y < approachY) {
         // Already above, go down to approach height, then horizontal, then down
-        points.push(wpX, approachY);
-        points.push(end.x, approachY);
+        proposedPoints.push(wpX, approachY);
+        proposedPoints.push(end.x, approachY);
       } else {
         // Need to go up first to get above target
         const aboveY = Math.min(start.y, end.y - minApproachDistance);
-        points.push(wpX, aboveY);
-        points.push(end.x, aboveY);
+        proposedPoints.push(wpX, aboveY);
+        proposedPoints.push(end.x, aboveY);
       }
     } else if (inSide === "bottom") {
       // Need to approach from below - ensure enough vertical space
       const approachY = end.y + minApproachDistance;
       if (start.y > approachY) {
-        points.push(wpX, approachY);
-        points.push(end.x, approachY);
+        proposedPoints.push(wpX, approachY);
+        proposedPoints.push(end.x, approachY);
       } else {
         const belowY = Math.max(start.y, end.y + minApproachDistance);
-        points.push(wpX, belowY);
-        points.push(end.x, belowY);
+        proposedPoints.push(wpX, belowY);
+        proposedPoints.push(end.x, belowY);
       }
     } else if (inSide === "left" || inSide === "right") {
       // Approaching from side - go to waypoint then to end
-      points.push(wpX, end.y);
+      proposedPoints.push(wpX, end.y);
     } else {
       // Default: vertical to waypoint y, then horizontal
-      points.push(wpX, wpY);
-      points.push(end.x, wpY);
+      proposedPoints.push(wpX, wpY);
+      proposedPoints.push(end.x, wpY);
     }
   } else {
     // Exit vertically
-    points.push(start.x, wpY);
+    proposedPoints.push(start.x, wpY);
 
     if (inSide === "left") {
       // Approach from the left
       const approachX = end.x - minApproachDistance;
-      points.push(approachX, wpY);
-      points.push(approachX, end.y);
+      proposedPoints.push(approachX, wpY);
+      proposedPoints.push(approachX, end.y);
     } else if (inSide === "right") {
       // Approach from the right
       const approachX = end.x + minApproachDistance;
-      points.push(approachX, wpY);
-      points.push(approachX, end.y);
+      proposedPoints.push(approachX, wpY);
+      proposedPoints.push(approachX, end.y);
     } else {
       // Then horizontal to waypoint x, then vertical
-      points.push(wpX, wpY);
-      points.push(wpX, end.y);
+      proposedPoints.push(wpX, wpY);
+      proposedPoints.push(wpX, end.y);
     }
   }
+
+  proposedPoints.push(end.x, end.y);
+
+  // Check for collisions before committing to this path
+  if (bendpointPathHasCollision(proposedPoints, nodeMap, fromNodeId, toNodeId)) {
+    return false; // Signal that A* fallback should be used
+  }
+
+  // No collision - add all points except start (already in points) and end (added later)
+  for (let i = 2; i < proposedPoints.length - 2; i += 2) {
+    points.push(proposedPoints[i], proposedPoints[i + 1]);
+  }
+  return true;
 }
 
 // ===== Routing helper functions =====
@@ -864,15 +945,35 @@ export function buildOrthogonalPath(
       // Store waypoint for visualization
       calculatedWaypoints.push({ x: waypointX, y: waypointY });
 
-      buildSingleWaypointPath(
+      const success = buildSingleWaypointPath(
         points,
         start,
         end,
         waypointX,
         waypointY,
         outSide,
-        inSide
+        inSide,
+        nodeMap,
+        fromNode.id,
+        toNode.id
       );
+      if (!success) {
+        // Collision detected - fall back to A* pathfinding
+        const autoRouted = buildAutoRoutedPath(
+          start,
+          end,
+          fromNode,
+          toNode,
+          outSide,
+          inSide,
+          nodeMap,
+          occupiedSegments
+        );
+        if (autoRouted) {
+          return autoRouted;
+        }
+        // A* also failed - continue with original points (will be minimal)
+      }
     } else if (targetBend) {
       // Only target bendpoint - approach from that direction
       const waypointX =
@@ -883,15 +984,35 @@ export function buildOrthogonalPath(
       // Store waypoint for visualization
       calculatedWaypoints.push({ x: waypointX, y: waypointY });
 
-      buildSingleWaypointPath(
+      const success = buildSingleWaypointPath(
         points,
         start,
         end,
         waypointX,
         waypointY,
         outSide,
-        inSide
+        inSide,
+        nodeMap,
+        fromNode.id,
+        toNode.id
       );
+      if (!success) {
+        // Collision detected - fall back to A* pathfinding
+        const autoRouted = buildAutoRoutedPath(
+          start,
+          end,
+          fromNode,
+          toNode,
+          outSide,
+          inSide,
+          nodeMap,
+          occupiedSegments
+        );
+        if (autoRouted) {
+          return autoRouted;
+        }
+        // A* also failed - continue with original points (will be minimal)
+      }
     }
   } else {
     // Fast path: straight vertical connection (bottom→top, nodes aligned)

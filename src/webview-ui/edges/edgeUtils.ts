@@ -64,6 +64,12 @@ export function inferExitSideFromBendpoints(
  * Infer entry side from XML bendpoints
  * Returns the side if it can be inferred, null otherwise
  * 
+ * Bendpoint coordinates are relative to the target node center:
+ * - x > 0: waypoint is to the right of target → approach from right → enter right side
+ * - x < 0: waypoint is to the left of target → approach from left → enter left side
+ * - y > 0: waypoint is below target → approach from below → enter bottom side
+ * - y < 0: waypoint is above target → approach from above → enter top side
+ * 
  * @param bendPoints - Array of bendpoints from edge display data
  * @returns Inferred entry side or null
  */
@@ -72,15 +78,23 @@ export function inferEntrySideFromBendpoints(
 ): string | null {
   if (!bendPoints || bendPoints.length === 0) {return null;}
 
-  // Look for target-relative bendpoint
-  const targetBend = bendPoints.find((bp) => bp.relativeTo === "target");
-  if (!targetBend) {return null;}
+  // Look for target-relative bendpoint(s) and combine if multiple exist
+  const targetBends = bendPoints.filter((bp) => bp.relativeTo === "target");
+  if (targetBends.length === 0) {return null;}
 
-  // The direction TO the target determines entry side
-  // x > 0 means coming from left (entering right side)
-  // x < 0 means coming from right (entering left side)
-  // y > 0 means coming from above (entering bottom side)
-  // y < 0 means coming from below (entering top side)
+  // If multiple target bendpoints exist, use the one closest to origin (smallest offset)
+  // This represents the final approach direction
+  let targetBend = targetBends[0];
+  let minDistance = Math.abs(targetBend.x) + Math.abs(targetBend.y);
+  
+  for (let i = 1; i < targetBends.length; i++) {
+    const dist = Math.abs(targetBends[i].x) + Math.abs(targetBends[i].y);
+    if (dist < minDistance) {
+      minDistance = dist;
+      targetBend = targetBends[i];
+    }
+  }
+
   const absX = Math.abs(targetBend.x);
   const absY = Math.abs(targetBend.y);
 
@@ -96,4 +110,36 @@ export function inferEntrySideFromBendpoints(
   }
 
   return null;
+}
+
+/**
+ * Get all source bendpoints sorted by distance from source
+ * Useful for multi-waypoint routing
+ */
+export function getSourceBendpoints(bendPoints: BendPoint[] | undefined): BendPoint[] {
+  if (!bendPoints || bendPoints.length === 0) {return [];}
+  
+  return bendPoints
+    .filter((bp) => bp.relativeTo === "source")
+    .sort((a, b) => {
+      const distA = Math.abs(a.x) + Math.abs(a.y);
+      const distB = Math.abs(b.x) + Math.abs(b.y);
+      return distA - distB;
+    });
+}
+
+/**
+ * Get all target bendpoints sorted by distance from target (closest first)
+ * Useful for multi-waypoint routing
+ */
+export function getTargetBendpoints(bendPoints: BendPoint[] | undefined): BendPoint[] {
+  if (!bendPoints || bendPoints.length === 0) {return [];}
+  
+  return bendPoints
+    .filter((bp) => bp.relativeTo === "target")
+    .sort((a, b) => {
+      const distA = Math.abs(a.x) + Math.abs(a.y);
+      const distB = Math.abs(b.x) + Math.abs(b.y);
+      return distA - distB;
+    });
 }

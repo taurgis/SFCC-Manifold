@@ -10,6 +10,8 @@ export {
   isErrorEdge,
   inferExitSideFromBendpoints,
   inferEntrySideFromBendpoints,
+  getSourceBendpoints,
+  getTargetBendpoints,
 } from "./edgeUtils";
 
 // Anchor calculations

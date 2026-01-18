@@ -2,6 +2,7 @@
  * A* pathfinding for edge routing
  * 
  * Implements grid-based A* pathfinding to route edges around obstacles.
+ * Uses a binary min-heap for efficient priority queue operations.
  */
 
 import type { Point } from "../types";
@@ -19,6 +20,89 @@ export function snapToGrid(value: number): number {
  */
 function pointKey(x: number, y: number): string {
   return `${x}|${y}`;
+}
+
+/**
+ * Binary min-heap implementation for efficient A* open set
+ * Provides O(log n) insert and extract-min operations
+ */
+class MinHeap {
+  private heap: string[] = [];
+  private fScore: Record<string, number>;
+
+  constructor(fScore: Record<string, number>) {
+    this.fScore = fScore;
+  }
+
+  private getScore(key: string): number {
+    return this.fScore[key] ?? Infinity;
+  }
+
+  private parent(i: number): number {
+    return Math.floor((i - 1) / 2);
+  }
+
+  private leftChild(i: number): number {
+    return 2 * i + 1;
+  }
+
+  private rightChild(i: number): number {
+    return 2 * i + 2;
+  }
+
+  private swap(i: number, j: number): void {
+    [this.heap[i], this.heap[j]] = [this.heap[j], this.heap[i]];
+  }
+
+  private bubbleUp(i: number): void {
+    while (i > 0 && this.getScore(this.heap[i]) < this.getScore(this.heap[this.parent(i)])) {
+      this.swap(i, this.parent(i));
+      i = this.parent(i);
+    }
+  }
+
+  private bubbleDown(i: number): void {
+    const n = this.heap.length;
+    while (true) {
+      let smallest = i;
+      const left = this.leftChild(i);
+      const right = this.rightChild(i);
+
+      if (left < n && this.getScore(this.heap[left]) < this.getScore(this.heap[smallest])) {
+        smallest = left;
+      }
+      if (right < n && this.getScore(this.heap[right]) < this.getScore(this.heap[smallest])) {
+        smallest = right;
+      }
+
+      if (smallest === i) {break;}
+      this.swap(i, smallest);
+      i = smallest;
+    }
+  }
+
+  push(key: string): void {
+    this.heap.push(key);
+    this.bubbleUp(this.heap.length - 1);
+  }
+
+  pop(): string | undefined {
+    if (this.heap.length === 0) {return undefined;}
+    if (this.heap.length === 1) {return this.heap.pop();}
+
+    const min = this.heap[0];
+    this.heap[0] = this.heap.pop()!;
+    this.bubbleDown(0);
+    return min;
+  }
+
+  isEmpty(): boolean {
+    return this.heap.length === 0;
+  }
+
+  get size(): number {
+    return this.heap.length;
+  }
 }
 
 /**
@@ -42,6 +126,7 @@ function reconstructPath(
 
 /**
  * A* pathfinding algorithm for orthogonal routes
+ * Uses binary min-heap for O(log n) operations instead of O(n log n) sorting
  * 
  * @param start - Start point
  * @param end - End point
@@ -63,12 +148,16 @@ export function aStarRoute(
   const startKey = pointKey(startX, startY);
   const goalKey = pointKey(endX, endY);
 
-  const openSet: string[] = [startKey];
   const cameFrom: Record<string, string> = {};
   const gScore: Record<string, number> = { [startKey]: 0 };
   const fScore: Record<string, number> = {
     [startKey]: Math.abs(startX - endX) + Math.abs(startY - endY),
   };
+
+  // Use min-heap for efficient priority queue operations
+  const openSet = new MinHeap(fScore);
+  const inOpenSet = new Set<string>([startKey]);
+  openSet.push(startKey);
 
   const nodeLookup: Record<string, Point> = {
     [startKey]: { x: startX, y: startY },
@@ -77,12 +166,12 @@ export function aStarRoute(
   const maxIterations = 12000;
   let iterations = 0;
 
-  while (openSet.length > 0 && iterations < maxIterations) {
+  while (!openSet.isEmpty() && iterations < maxIterations) {
     iterations += 1;
-    openSet.sort((a, b) => (fScore[a] ?? Infinity) - (fScore[b] ?? Infinity));
-    const current = openSet.shift();
+    const current = openSet.pop();
     
     if (!current) {break;}
+    inOpenSet.delete(current);
     
     if (current === goalKey) {
       nodeLookup[goalKey] = { x: endX, y: endY };
@@ -120,8 +209,9 @@ export function aStarRoute(
       fScore[nbKey] = tentativeG + heuristic * 1.1; // light bias toward directness
       nodeLookup[nbKey] = nb;
 
-      if (!openSet.includes(nbKey)) {
+      if (!inOpenSet.has(nbKey)) {
         openSet.push(nbKey);
+        inOpenSet.add(nbKey);
       }
     }
   }
