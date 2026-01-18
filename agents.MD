@@ -126,7 +126,7 @@ Konva is loaded via a `<script>` tag in the webview HTML (from `node_modules/kon
 | `npm run esbuild-extension` | Build only the extension bundle |
 | `npm run esbuild-webview` | Build only the webview bundle |
 | `npm run vscode:prepublish` | Production build with minification (for publishing) |
-| `npm run dump-layout -- <pipeline.xml> [-o out.txt] [--cell-width N] [--show-bendpoints] [-F|--full-layout]` | Generate an ASCII layout dump (grid, nodes, edges with in/out sides, anchors, optional bendpoints, optional coarse full-layout sketch ~12px/cell with join nodes as circles and edges routed around boxes). Writes to `debug/layouts/<name>.txt` by default; `--cell-width` widens grid labels. |
+| `npm run dump-layout -- <pipeline.xml> [-o out.txt] [--cell-width N] [--show-bendpoints] [-F|--full-layout] [-b|--branch <name>]` | Generate an ASCII layout dump (grid, nodes, edges with in/out sides, anchors, optional bendpoints, optional coarse full-layout sketch ~12px/cell with join nodes as circles and edges routed around boxes). Writes to `debug/layouts/<name>.txt` by default (or `<name>_<branch>.txt` when filtering); `--cell-width` widens grid labels; `--branch` filters to a single start node/branch and its sub-branches. |
 
 ## Data Flow
 

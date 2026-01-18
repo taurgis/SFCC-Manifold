@@ -36,6 +36,7 @@ interface CliOptions {
   cellWidth: number;
   showBendpoints: boolean;
   fullLayout: boolean;
+  branch?: string;
 }
 
 interface PipelineDump {
@@ -50,11 +51,15 @@ const FULL_LAYOUT_SCALE = 8;
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const xmlPath = path.resolve(process.cwd(), options.inputPath);
+  
+  // Build output filename - include branch name if filtering
+  const baseName = path.basename(xmlPath, path.extname(xmlPath));
+  const outputName = options.branch ? `${baseName}_${options.branch}` : baseName;
   const defaultOut = path.join(
     process.cwd(),
     "debug",
     "layouts",
-    `${path.basename(xmlPath, path.extname(xmlPath))}.txt`
+    `${outputName}.txt`
   );
 
   if (!fs.existsSync(xmlPath)) {
@@ -63,11 +68,40 @@ async function main(): Promise<void> {
 
   const xml = fs.readFileSync(xmlPath, "utf8");
   const parsed = parsePipeline(xml, path.basename(xmlPath));
-  const nodes = toWebviewNodes(parsed.nodes);
-  const edges = toWebviewEdges(parsed.edges);
+  
+  // Filter nodes and edges if branch is specified
+  let filteredNodes = parsed.nodes;
+  let filteredEdges = parsed.edges;
+  
+  if (options.branch) {
+    const { nodes: branchNodes, edges: branchEdges } = filterByBranch(
+      parsed.nodes,
+      parsed.edges,
+      options.branch
+    );
+    filteredNodes = branchNodes;
+    filteredEdges = branchEdges;
+    
+    if (filteredNodes.length === 0) {
+      // List available branches for user reference
+      const availableBranches = getAvailableBranches(parsed.nodes);
+      throw new Error(
+        `No nodes found for branch "${options.branch}". Available branches: ${availableBranches.join(", ")}`
+      );
+    }
+  }
+  
+  const nodes = toWebviewNodes(filteredNodes);
+  const edges = toWebviewEdges(filteredEdges);
 
   const placedNodes = calculateLayout(nodes, { preserveGrid: true });
-  const dump = renderDump(placedNodes, edges, parsed.name, {
+  
+  // Build pipeline name with branch info
+  const displayName = options.branch 
+    ? `${parsed.name} (branch: ${options.branch})`
+    : parsed.name;
+  
+  const dump = renderDump(placedNodes, edges, displayName, {
     cellWidth: options.cellWidth,
     showBendpoints: options.showBendpoints,
     fullLayout: options.fullLayout,
@@ -78,6 +112,9 @@ async function main(): Promise<void> {
   fs.writeFileSync(outPath, dump.ascii, "utf8");
    
   console.log(`Layout written to ${outPath}`);
+  if (options.branch) {
+    console.log(`Filtered to branch: ${options.branch} (${filteredNodes.length} nodes, ${filteredEdges.length} edges)`);
+  }
 }
 
 function parseArgs(args: string[]): CliOptions {
@@ -86,6 +123,7 @@ function parseArgs(args: string[]): CliOptions {
   let cellWidth = DEFAULT_CELL_WIDTH;
   let showBendpoints = false;
   let fullLayout = false;
+  let branch: string | undefined;
 
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
@@ -111,6 +149,11 @@ function parseArgs(args: string[]): CliOptions {
       fullLayout = true;
       continue;
     }
+    if (arg === "--branch" || arg === "-b" || arg === "--pipeline" || arg === "-p") {
+      branch = args[i + 1];
+      i += 1;
+      continue;
+    }
     if (!inputPath) {
       inputPath = arg;
     }
@@ -118,11 +161,11 @@ function parseArgs(args: string[]): CliOptions {
 
   if (!inputPath) {
     throw new Error(
-      "Usage: npm run dump-layout -- <path-to-pipeline.xml> [-o output.txt] [--cell-width N] [--show-bendpoints] [-F|--full-layout]"
+      "Usage: npm run dump-layout -- <path-to-pipeline.xml> [-o output.txt] [--cell-width N] [--show-bendpoints] [-F|--full-layout] [-b|--branch|--pipeline <name>]"
     );
   }
 
-  return { inputPath, outputPath, cellWidth, showBendpoints, fullLayout };
+  return { inputPath, outputPath, cellWidth, showBendpoints, fullLayout, branch };
 }
 
 function toWebviewNodes(nodes: ParsedNode[]): PipelineNode[] {
@@ -173,6 +216,118 @@ function toWebviewEdges(edges: ParsedEdge[]): PipelineEdge[] {
         }
       : undefined,
   }));
+}
+
+/**
+ * Filter nodes and edges to only include those belonging to a specific branch
+ * and its sub-branches. The branch parameter matches the start node name or
+ * the branch basename.
+ * 
+ * Branch matching rules:
+ * - Exact match on branch path (e.g., "Send" matches nodes with branch="Send")
+ * - Matches sub-branches (e.g., "Send" matches branch="Send:0:2/b2")
+ * - Matches by start node name (e.g., "SecureSend" matches the SecureSend start node's branch)
+ */
+function filterByBranch(
+  nodes: ParsedNode[],
+  edges: ParsedEdge[],
+  branchFilter: string
+): { nodes: ParsedNode[]; edges: ParsedEdge[] } {
+  // First, try to find the start node by name to get its branch path
+  const startNode = nodes.find(
+    (n) => n.type === "start" && (n.label === `Start ${branchFilter}` || n.label === branchFilter)
+  );
+  
+  // Determine the branch path to filter by
+  let branchPath: string;
+  if (startNode) {
+    branchPath = startNode.branch;
+  } else {
+    // Assume the filter is already a branch path/name
+    branchPath = branchFilter;
+  }
+  
+  // Collect all node IDs that belong to this branch or its sub-branches
+  const filteredNodeIds = new Set<string>();
+  
+  for (const node of nodes) {
+    // A node belongs to the branch if:
+    // 1. Its branch exactly matches the branch path
+    // 2. Its branch starts with the branch path followed by a separator
+    if (
+      node.branch === branchPath ||
+      node.branch.startsWith(`${branchPath}:`) ||
+      node.branch.startsWith(`${branchPath}/`)
+    ) {
+      filteredNodeIds.add(node.id);
+    }
+  }
+  
+  // Also include any nodes that are targets of edges from filtered nodes
+  // This handles cross-branch transitions (like SecureSend -> Send's join node)
+  const edgesFromFiltered = edges.filter((e) => filteredNodeIds.has(e.from));
+  for (const edge of edgesFromFiltered) {
+    // Add the target node and traverse its downstream nodes
+    addDownstreamNodes(edge.to, nodes, edges, filteredNodeIds);
+  }
+  
+  // Filter nodes
+  const filteredNodes = nodes.filter((n) => filteredNodeIds.has(n.id));
+  
+  // Filter edges to only include those where both endpoints are in the filtered set
+  const filteredEdges = edges.filter(
+    (e) => filteredNodeIds.has(e.from) && filteredNodeIds.has(e.to)
+  );
+  
+  return { nodes: filteredNodes, edges: filteredEdges };
+}
+
+/**
+ * Recursively add downstream nodes starting from a given node ID
+ */
+function addDownstreamNodes(
+  nodeId: string,
+  nodes: ParsedNode[],
+  edges: ParsedEdge[],
+  nodeSet: Set<string>
+): void {
+  if (nodeSet.has(nodeId)) {
+    return; // Already added
+  }
+  
+  const node = nodes.find((n) => n.id === nodeId);
+  if (!node) {
+    return;
+  }
+  
+  nodeSet.add(nodeId);
+  
+  // Find all edges from this node and add their targets
+  const outgoingEdges = edges.filter((e) => e.from === nodeId);
+  for (const edge of outgoingEdges) {
+    addDownstreamNodes(edge.to, nodes, edges, nodeSet);
+  }
+}
+
+/**
+ * Get a list of available branch names from the parsed nodes
+ */
+function getAvailableBranches(nodes: ParsedNode[]): string[] {
+  const branches = new Set<string>();
+  
+  for (const node of nodes) {
+    // Extract the top-level branch name (before any : or / separator)
+    const branch = node.branch;
+    const topLevel = branch.split(/[:/]/)[0];
+    branches.add(topLevel);
+    
+    // Also add start node names as they're commonly used for filtering
+    if (node.type === "start" && node.label.startsWith("Start ")) {
+      branches.add(node.label.replace("Start ", ""));
+    }
+  }
+  
+  return Array.from(branches).sort();
 }
 
 function renderDump(
