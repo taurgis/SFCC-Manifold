@@ -44,6 +44,9 @@ class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
               message.startNode
             );
             break;
+          case "goToSource":
+            await this.handleGoToSource(document, message.line);
+            break;
         }
       }
     );
@@ -97,6 +100,31 @@ class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
         });
       }
     }, 500);
+  }
+
+  /**
+   * Handle "Go to Source" request - open the XML file and navigate to the line
+   */
+  private async handleGoToSource(document: vscode.TextDocument, line: number): Promise<void> {
+    // Open the document in a text editor beside the webview
+    const editor = await vscode.window.showTextDocument(document, {
+      viewColumn: vscode.ViewColumn.Beside,
+      preserveFocus: false,
+    });
+
+    // Navigate to the line (lines are 1-indexed in the parser, but VS Code uses 0-indexed)
+    const targetLine = Math.max(0, line - 1);
+    const lineLength = document.lineAt(targetLine).text.length;
+    
+    // Create a range that selects the entire line
+    const range = new vscode.Range(
+      new vscode.Position(targetLine, 0),
+      new vscode.Position(targetLine, lineLength)
+    );
+    
+    // Reveal the range and highlight it
+    editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+    editor.selection = new vscode.Selection(range.start, range.end);
   }
 
   /**

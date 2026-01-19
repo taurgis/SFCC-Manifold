@@ -38,6 +38,7 @@ export interface PipelineNode {
   template: Template | null;
   description: string | null;
   position?: NodePosition;
+  sourceLocation?: SourceLocation;
 }
 
 export interface PlacedNode extends PipelineNode {
@@ -54,6 +55,11 @@ export interface NodePosition {
   orientation?: string;
 }
 
+export interface SourceLocation {
+  line: number;
+  column?: number;
+}
+
 export interface PipelineEdge {
   from: string;
   to: string;
@@ -63,6 +69,7 @@ export interface PipelineEdge {
   display?: {
     bendPoints?: BendPoint[];
   };
+  sourceLocation?: SourceLocation;
 }
 
 export interface BendPoint {

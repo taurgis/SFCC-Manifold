@@ -1,5 +1,5 @@
 import { DOMParser } from "@xmldom/xmldom";
-import { BendPoint, ConfigProperty, KeyBinding, ParsedPipeline, PipelineEdge, PipelineNode, PipelineNodeType, TransitionDisplay } from "./types";
+import { BendPoint, ConfigProperty, KeyBinding, ParsedPipeline, PipelineEdge, PipelineNode, PipelineNodeType, SourceLocation, TransitionDisplay } from "./types";
 
 /**
  * Deferred edge to be processed after all nodes are parsed
@@ -14,6 +14,7 @@ interface DeferredEdge {
   sourceConnector?: string;
   targetConnector?: string;
   display?: TransitionDisplay;
+  sourceLocation?: SourceLocation;
 }
 
 export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedPipeline {
@@ -83,6 +84,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
     let pendingTargetConnector: string | undefined;
     let pendingDisplay: TransitionDisplay | undefined;
     let pendingTargetPath: string | undefined;
+    let pendingSourceLocation: SourceLocation | undefined;
     let nodeIndex = 0;
 
     for (const child of getElementChildren(segmentEl)) {
@@ -110,6 +112,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
               sourceConnector: pendingSourceConnector,
               targetConnector: pendingTargetConnector,
               display: pendingDisplay,
+              sourceLocation: pendingSourceLocation,
             });
           } else {
             // Normal sequential edge within the segment (no target-path)
@@ -120,6 +123,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
               sourceConnector: pendingSourceConnector,
               targetConnector: pendingTargetConnector,
               display: pendingDisplay,
+              sourceLocation: pendingSourceLocation,
             });
           }
         }
@@ -130,6 +134,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
         pendingTargetConnector = undefined;
         pendingDisplay = undefined;
         pendingTargetPath = undefined;
+        pendingSourceLocation = undefined;
       } else if (child.tagName === "simple-transition" || child.tagName === "transition") {
         const label = deriveTransitionLabel(child);
         const targetConnector = child.getAttribute("target-connector");
@@ -138,6 +143,9 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
 
         // Parse transition display (bend points)
         const transitionDisplay = parseTransitionDisplay(child);
+        
+        // Capture source location for the transition
+        const transitionSourceLocation = getSourceLocation(child);
 
         // Check if this is a loop back-edge (transition back to parent loop node)
         if (targetConnector === "loop" && targetPath && parentLoopNodeId && lastNodeId) {
@@ -148,18 +156,21 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
             sourceConnector: sourceConnector || undefined,
             targetConnector: targetConnector || undefined,
             display: transitionDisplay,
+            sourceLocation: transitionSourceLocation,
           });
           pendingLabel = undefined;
           pendingSourceConnector = undefined;
           pendingTargetConnector = undefined;
           pendingDisplay = undefined;
           pendingTargetPath = undefined;
+          pendingSourceLocation = undefined;
         } else {
           pendingLabel = label;
           pendingSourceConnector = sourceConnector || undefined;
           pendingTargetConnector = targetConnector || undefined;
           pendingDisplay = transitionDisplay;
           pendingTargetPath = targetPath || undefined;
+          pendingSourceLocation = transitionSourceLocation;
         }
       }
     }
@@ -175,6 +186,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
         sourceConnector: pendingSourceConnector,
         targetConnector: pendingTargetConnector,
         display: pendingDisplay,
+        sourceLocation: pendingSourceLocation,
       });
     }
 
@@ -196,6 +208,9 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
 
     const id = `${branchPath}:${segmentIndex}:${nodeIndex}`;
     const { type, label, attributes, configProperties, bindings } = describeNode(typeEl);
+    
+    // Get source location from the type element (the actual node type element like start-node, pipelet-node, etc.)
+    const sourceLocation = typeEl ? getSourceLocation(typeEl) : getSourceLocation(nodeEl);
 
     const parsedNode: PipelineNode = {
       id,
@@ -206,6 +221,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
       configProperties,
       bindings,
       position,
+      sourceLocation,
     };
 
     nodes.push(parsedNode);
@@ -229,6 +245,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
       const transitionEl = findFirstElement(nestedBranch, (el) => el.tagName === "transition" || el.tagName === "simple-transition");
       const branchTransitionDisplay = transitionEl ? parseTransitionDisplay(transitionEl) : undefined;
       const branchTargetConnector = transitionEl?.getAttribute("target-connector") || undefined;
+      const branchSourceLocation = transitionEl ? getSourceLocation(transitionEl) : getSourceLocation(nestedBranch);
 
       // Pass loop node ID if this is a loop node, so back-edges can reference it
       const branchResult = parseBranchWithEntry(
@@ -245,6 +262,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
           sourceConnector: connectorLabel,
           targetConnector: branchTargetConnector,
           display: branchTransitionDisplay,
+          sourceLocation: branchSourceLocation,
         });
       }
     }
@@ -279,6 +297,7 @@ export function parsePipeline(xml: string, sourceName = "pipeline.xml"): ParsedP
           sourceConnector: deferred.sourceConnector,
           targetConnector: deferred.targetConnector,
           display: deferred.display,
+          sourceLocation: deferred.sourceLocation,
         });
       }
     }
@@ -617,4 +636,22 @@ function stripExtension(fileName: string): string {
   }
   const lastDot = parts.lastIndexOf(".");
   return lastDot > 0 ? parts.slice(0, lastDot) : parts;
+}
+
+/**
+ * Extract source location (line/column) from an XML element
+ * The @xmldom/xmldom parser stores these as properties on the Element
+ */
+function getSourceLocation(el: Element): SourceLocation | undefined {
+  // @xmldom/xmldom stores lineNumber and columnNumber on elements
+  const lineNumber = (el as unknown as { lineNumber?: number }).lineNumber;
+  const columnNumber = (el as unknown as { columnNumber?: number }).columnNumber;
+  
+  if (typeof lineNumber === "number" && lineNumber > 0) {
+    return {
+      line: lineNumber,
+      column: typeof columnNumber === "number" ? columnNumber : undefined,
+    };
+  }
+  return undefined;
 }

@@ -5,8 +5,15 @@
 import type { PlacedNode, VSCodeAPI } from "./types";
 import { navigateToNode } from "./selection";
 
-// VS Code API
+// VS Code API - shared across modules
 let vscode: VSCodeAPI;
+
+/**
+ * Get the VS Code API instance (must be called after initNavigation)
+ */
+export function getVsCodeApi(): VSCodeAPI {
+  return vscode;
+}
 
 /**
  * Initialize navigation with VS Code API

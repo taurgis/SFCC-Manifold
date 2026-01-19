@@ -118,6 +118,7 @@ export function calculateLayout(
         bindings: node.bindings || [],
         template: node.template || null,
         description: node.description || null,
+        sourceLocation: node.sourceLocation,
         orientation: pos?.orientation ?? null,
         gridX,
         gridY,

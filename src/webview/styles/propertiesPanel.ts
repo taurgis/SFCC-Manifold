@@ -550,5 +550,40 @@ export function getPropertiesPanelStyles(): string {
       background: rgba(147, 164, 200, 0.15);
       color: var(--muted);
     }
+
+    /* Go to Source button */
+    .go-to-source-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 10px 16px;
+      margin-top: 12px;
+      background: rgba(109, 211, 255, 0.1);
+      border: 1px solid rgba(109, 211, 255, 0.3);
+      border-radius: 8px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .go-to-source-btn:hover {
+      background: rgba(109, 211, 255, 0.2);
+      border-color: var(--accent);
+    }
+
+    .go-to-source-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .go-to-source-btn .line-number {
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 11px;
+      opacity: 0.8;
+    }
   `;
 }

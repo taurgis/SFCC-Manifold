@@ -6,7 +6,8 @@ import { NODE_COLORS, getEdgeColor } from "./constants";
 import { pipelineData, placedNodes, setSelectedNodeId, setSelectedEdgeId } from "./state";
 import { iconSvgs, getNodeTypeIcon } from "./icons";
 import { escapeHtml, escapeAttr, formatAttributeKey } from "./utils";
-import type { PlacedNode, PipelineNode, PipelineEdge } from "./types";
+import { getVsCodeApi } from "./navigation";
+import type { PlacedNode, PipelineNode, PipelineEdge, SourceLocation } from "./types";
 
 /**
  * Find a node by ID (local implementation to avoid circular deps)
@@ -58,6 +59,19 @@ export function initPropertiesPanel(): void {
   content.addEventListener("click", (e) => {
     let target = e.target as HTMLElement | null;
     while (target && target !== content) {
+      // Handle go-to-source button click
+      if (target.classList?.contains("go-to-source-btn")) {
+        const line = target.getAttribute("data-line");
+        const vscode = getVsCodeApi();
+        if (line && vscode) {
+          vscode.postMessage({
+            type: "goToSource",
+            line: parseInt(line, 10),
+          });
+        }
+        return;
+      }
+      // Handle connection item click
       if (target.classList?.contains("connection-item")) {
         const nodeId = target.getAttribute("data-node-id");
         if (nodeId && window.handleConnectionClick) {
@@ -162,6 +176,7 @@ export function renderNodeProperties(node: PlacedNode | PipelineNode): void {
 
   content.innerHTML =
     renderNodeHeader(node, color) +
+    renderGoToSourceButton(node.sourceLocation) +
     renderConfigPropertiesSection(node) +
     renderBindingsSection(node) +
     renderAttributesSection(node) +
@@ -183,11 +198,29 @@ export function renderEdgeProperties(edge: PipelineEdge): void {
   const edgeColor = getEdgeColor(edge.label);
 
   let html = renderEdgeHeader(edge, edgeColor);
+  html += renderGoToSourceButton(edge.sourceLocation);
   html += renderEdgeFromSection(fromNode);
   html += renderEdgeToSection(toNode);
   html += renderEdgeDetailsSection(edge);
 
   content.innerHTML = html;
+}
+
+/**
+ * Render the "Go to Source" button if source location is available
+ */
+function renderGoToSourceButton(sourceLocation?: SourceLocation): string {
+  if (!sourceLocation) {
+    return "";
+  }
+  
+  return `<div class="properties-section" style="padding-top: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
+    <button class="go-to-source-btn" data-line="${sourceLocation.line}">
+      ${iconSvgs.code}
+      <span>Go to Source</span>
+      <span class="line-number">Line ${sourceLocation.line}</span>
+    </button>
+  </div>`;
 }
 
 function renderNodeHeader(node: PlacedNode | PipelineNode, color: string): string {

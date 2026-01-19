@@ -1,3 +1,11 @@
+/**
+ * Source location in the XML file for deep-linking
+ */
+export interface SourceLocation {
+  line: number;
+  column?: number;
+}
+
 export type PipelineNodeType =
   | "start"
   | "end"
@@ -56,6 +64,8 @@ export interface PipelineNode {
     width?: number;
     orientation?: string;
   };
+  /** Source location in the XML file for deep-linking */
+  sourceLocation?: SourceLocation;
 }
 
 /**
@@ -85,6 +95,8 @@ export interface PipelineEdge {
   targetConnector?: string;
   /** Display information including bend points for line routing */
   display?: TransitionDisplay;
+  /** Source location in the XML file for deep-linking */
+  sourceLocation?: SourceLocation;
 }
 
 export interface ParsedPipeline {
