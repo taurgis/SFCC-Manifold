@@ -222,6 +222,312 @@ describe("bendpointRouting", () => {
       // The actual waypoint should match
       expect(result.actualWaypoints.length).toBeGreaterThan(0);
     });
+
+    it("handles horizontal exit to vertical entry (top)", () => {
+      const points: number[] = [100, 50];
+      const start: Point = { x: 100, y: 50 };
+      const end: Point = { x: 300, y: 200 };
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        200, 100, // source waypoint
+        300, 180, // target waypoint
+        "right",
+        "top" // vertical entry from top
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBeGreaterThan(0);
+    });
+
+    it("handles horizontal exit to vertical entry (bottom)", () => {
+      const points: number[] = [100, 200];
+      const start: Point = { x: 100, y: 200 };
+      const end: Point = { x: 300, y: 50 };
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        200, 150, // source waypoint
+        300, 80, // target waypoint
+        "right",
+        "bottom" // vertical entry from bottom
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBeGreaterThan(0);
+    });
+
+    it("handles default horizontal exit routing with unknown inSide", () => {
+      const points: number[] = [100, 50];
+      const start: Point = { x: 100, y: 50 };
+      const end: Point = { x: 300, y: 200 };
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        200, 100,
+        250, 180,
+        "right",
+        "unknown" // unknown entry side triggers default
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBeGreaterThan(0);
+    });
+
+    it("handles vertical exit to top entry", () => {
+      const points: number[] = [100, 65];
+      const start: Point = { x: 100, y: 65 };
+      const end: Point = { x: 300, y: 200 };
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        100, 100,
+        300, 170, // target waypoint above end
+        "bottom",
+        "top"
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBe(2);
+    });
+
+    it("handles vertical exit to bottom entry", () => {
+      const points: number[] = [100, 200];
+      const start: Point = { x: 100, y: 200 };
+      const end: Point = { x: 300, y: 50 };
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        100, 150,
+        300, 80,
+        "top",
+        "bottom"
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBe(2);
+    });
+
+    it("handles vertical exit to horizontal entry (right)", () => {
+      const points: number[] = [100, 65];
+      const start: Point = { x: 100, y: 65 };
+      const end: Point = { x: 300, y: 200 };
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        100, 100,
+        350, 200, // target waypoint to the right of end
+        "bottom",
+        "right"
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBeGreaterThan(0);
+    });
+
+    it("handles vertical exit to horizontal entry (left)", () => {
+      const points: number[] = [300, 65];
+      const start: Point = { x: 300, y: 65 };
+      const end: Point = { x: 100, y: 200 };
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        300, 100,
+        50, 200, // target waypoint to the left of end
+        "bottom",
+        "left"
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBeGreaterThan(0);
+    });
+
+    it("handles default vertical exit routing with unknown inSide", () => {
+      const points: number[] = [100, 65];
+      const start: Point = { x: 100, y: 65 };
+      const end: Point = { x: 300, y: 200 };
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        100, 100,
+        250, 180,
+        "bottom",
+        "unknown" // triggers default vertical routing
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBeGreaterThan(0);
+    });
+
+    it("handles top exit with channel needing adjustment", () => {
+      const points: number[] = [100, 100];
+      const start: Point = { x: 100, y: 100 };
+      const end: Point = { x: 300, y: 50 };
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        100, 150, // srcWpY below start
+        300, 80,
+        "top", // exit top but channel would be below
+        "top"
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      // Channel should be adjusted to be above start
+      expect(result.actualWaypoints.length).toBe(2);
+    });
+
+    it("handles bottom exit with channel needing adjustment", () => {
+      const points: number[] = [100, 100];
+      const start: Point = { x: 100, y: 100 };
+      const end: Point = { x: 300, y: 200 };
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        100, 50, // srcWpY above start
+        300, 180,
+        "bottom", // exit bottom but channel would be above
+        "bottom"
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBe(2);
+    });
+
+    it("handles right exit with channel needing left adjustment", () => {
+      const points: number[] = [200, 50];
+      const start: Point = { x: 200, y: 50 };
+      const end: Point = { x: 100, y: 200 };
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        150, 50, // srcWpX to the left of start
+        80, 200,
+        "right", // exit right but channel would be to the left
+        "right"
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      // Channel should be adjusted to ensure right exit
+      expect(result.actualWaypoints.length).toBe(2);
+    });
+
+    it("handles left exit with channel needing right adjustment", () => {
+      const points: number[] = [100, 50];
+      const start: Point = { x: 100, y: 50 };
+      const end: Point = { x: 200, y: 200 };
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        150, 50, // srcWpX to the right of start
+        220, 200,
+        "left", // exit left but channel would be to the right
+        "left"
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBe(2);
+    });
+
+    it("handles horizontal exit to vertical entry with close x coordinates", () => {
+      const points: number[] = [100, 50];
+      const start: Point = { x: 100, y: 50 };
+      const end: Point = { x: 203, y: 200 }; // end.x within 5 of srcWpX
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        200, 100, // srcWpX close to end.x
+        200, 180,
+        "right",
+        "top"
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBeGreaterThan(0);
+    });
+
+    it("handles vertical exit to horizontal entry with close y coordinates", () => {
+      const points: number[] = [100, 100];
+      const start: Point = { x: 100, y: 100 };
+      const end: Point = { x: 300, y: 153 }; // end.y within 5 of srcWpY
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        100, 150, // srcWpY close to end.y
+        350, 150,
+        "bottom",
+        "right"
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBeGreaterThan(0);
+    });
+
+    it("handles default horizontal with close x coordinates", () => {
+      const points: number[] = [100, 50];
+      const start: Point = { x: 100, y: 50 };
+      const end: Point = { x: 203, y: 200 }; // close to srcWpX
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        200, 100,
+        200, 180,
+        "right",
+        "unknown" // default path
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBeGreaterThan(0);
+    });
+
+    it("handles default vertical with close y coordinates", () => {
+      const points: number[] = [100, 100];
+      const start: Point = { x: 100, y: 100 };
+      const end: Point = { x: 300, y: 153 }; // close to srcWpY
+
+      const result = buildBendpointPath(
+        points,
+        start,
+        end,
+        100, 150,
+        250, 150, // tgtWpX
+        "bottom",
+        "unknown" // default path
+      );
+
+      expect(points.length).toBeGreaterThan(2);
+      expect(result.actualWaypoints.length).toBeGreaterThan(0);
+    });
   });
 
   describe("buildSingleWaypointPath", () => {
@@ -471,6 +777,214 @@ describe("bendpointRouting", () => {
         125,
         "right",
         "top",
+        emptyNodeMap,
+        "from",
+        "to",
+        emptySegments,
+        fromNode,
+        toNode
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it("handles vertical exit with default routing (unknown inSide)", () => {
+      const points: number[] = [100, 65];
+      const start: Point = { x: 100, y: 65 };
+      const end: Point = { x: 300, y: 200 };
+      const fromNode = createNode("from", 0, 0);
+      const toNode = createNode("to", 200, 150);
+
+      const result = buildSingleWaypointPath(
+        points,
+        start,
+        end,
+        200,
+        125,
+        "bottom",
+        "unknown", // triggers default vertical routing
+        emptyNodeMap,
+        "from",
+        "to",
+        emptySegments,
+        fromNode,
+        toNode
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it("handles horizontal exit with default routing (unknown inSide)", () => {
+      const points: number[] = [100, 50];
+      const start: Point = { x: 100, y: 50 };
+      const end: Point = { x: 300, y: 200 };
+      const fromNode = createNode("from", 0, 0);
+      const toNode = createNode("to", 200, 150);
+
+      const result = buildSingleWaypointPath(
+        points,
+        start,
+        end,
+        200,
+        125,
+        "right",
+        "unknown", // triggers default horizontal routing
+        emptyNodeMap,
+        "from",
+        "to",
+        emptySegments,
+        fromNode,
+        toNode
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it("handles top entry when start is above approach height", () => {
+      const points: number[] = [100, 100]; // start above approach height
+      const start: Point = { x: 100, y: 100 };
+      const end: Point = { x: 300, y: 200 };
+      const fromNode = createNode("from", 0, 50);
+      const toNode = createNode("to", 200, 150);
+
+      const result = buildSingleWaypointPath(
+        points,
+        start,
+        end,
+        200,
+        150,
+        "right",
+        "top",
+        emptyNodeMap,
+        "from",
+        "to",
+        emptySegments,
+        fromNode,
+        toNode
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it("handles top entry when start is below approach height", () => {
+      const points: number[] = [100, 180]; // start below approach height
+      const start: Point = { x: 100, y: 180 };
+      const end: Point = { x: 300, y: 200 };
+      const fromNode = createNode("from", 0, 130);
+      const toNode = createNode("to", 200, 150);
+
+      const result = buildSingleWaypointPath(
+        points,
+        start,
+        end,
+        200,
+        190,
+        "right",
+        "top",
+        emptyNodeMap,
+        "from",
+        "to",
+        emptySegments,
+        fromNode,
+        toNode
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it("handles bottom entry when start is below approach height", () => {
+      const points: number[] = [100, 100]; // start below approach
+      const start: Point = { x: 100, y: 100 };
+      const end: Point = { x: 300, y: 50 };
+      const fromNode = createNode("from", 0, 50);
+      const toNode = createNode("to", 200, 0);
+
+      const result = buildSingleWaypointPath(
+        points,
+        start,
+        end,
+        200,
+        75,
+        "right",
+        "bottom",
+        emptyNodeMap,
+        "from",
+        "to",
+        emptySegments,
+        fromNode,
+        toNode
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it("handles bottom entry when start is above approach height", () => {
+      const points: number[] = [100, 50]; // start above approach
+      const start: Point = { x: 100, y: 50 };
+      const end: Point = { x: 300, y: 100 };
+      const fromNode = createNode("from", 0, 0);
+      const toNode = createNode("to", 200, 50);
+
+      const result = buildSingleWaypointPath(
+        points,
+        start,
+        end,
+        200,
+        75,
+        "right",
+        "bottom",
+        emptyNodeMap,
+        "from",
+        "to",
+        emptySegments,
+        fromNode,
+        toNode
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it("handles left exit", () => {
+      const points: number[] = [300, 50];
+      const start: Point = { x: 300, y: 50 };
+      const end: Point = { x: 100, y: 200 };
+      const fromNode = createNode("from", 200, 0);
+      const toNode = createNode("to", 0, 150);
+
+      const result = buildSingleWaypointPath(
+        points,
+        start,
+        end,
+        200,
+        125,
+        "left",
+        "top",
+        emptyNodeMap,
+        "from",
+        "to",
+        emptySegments,
+        fromNode,
+        toNode
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it("handles top exit", () => {
+      const points: number[] = [100, 200];
+      const start: Point = { x: 100, y: 200 };
+      const end: Point = { x: 300, y: 50 };
+      const fromNode = createNode("from", 0, 150);
+      const toNode = createNode("to", 200, 0);
+
+      const result = buildSingleWaypointPath(
+        points,
+        start,
+        end,
+        200,
+        125,
+        "top",
+        "bottom",
         emptyNodeMap,
         "from",
         "to",
