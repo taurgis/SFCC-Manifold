@@ -11,6 +11,8 @@ const documentWebviews = new Map<string, vscode.WebviewPanel>();
 class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = "sfccManifold.pipelineEditor";
 
+  private suppressNextDocumentChange = new Set<string>();
+
   constructor(private readonly context: vscode.ExtensionContext) {}
 
   public async resolveCustomTextEditor(
@@ -47,6 +49,9 @@ class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
           case "goToSource":
             await this.handleGoToSource(document, message.line);
             break;
+          case "editNodeProperty":
+            await this.handleEditNodeProperty(document, webviewPanel, message);
+            break;
         }
       }
     );
@@ -54,6 +59,15 @@ class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
     // Listen for document changes
     const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === document.uri.toString()) {
+        if (this.suppressNextDocumentChange.has(document.uri.toString())) {
+          this.suppressNextDocumentChange.delete(document.uri.toString());
+          return;
+        }
+
+        // Skip refresh on pure save events with no content edits to avoid resetting view state
+        if (e.contentChanges.length === 0) {
+          return;
+        }
         void this.updateWebview(document, webviewPanel);
       }
     });
@@ -125,6 +139,143 @@ class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
     // Reveal the range and highlight it
     editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
     editor.selection = new vscode.Selection(range.start, range.end);
+  }
+
+  /**
+   * Handle edit requests from the webview
+   */
+  private async handleEditNodeProperty(
+    document: vscode.TextDocument,
+    webviewPanel: vscode.WebviewPanel,
+    message: {
+      type: "editNodeProperty";
+      nodeId: string;
+      propertyType: "attribute" | "config" | "binding";
+      key: string;
+      value: string;
+      sourceLine?: number;
+    }
+  ): Promise<void> {
+    const docKey = document.uri.toString();
+    try {
+      if (!message.sourceLine || message.sourceLine <= 0) {
+        throw new Error("Missing source location for property edit");
+      }
+
+      // Apply text edit while suppressing the resulting change refresh
+      this.suppressNextDocumentChange.add(docKey);
+
+      if (message.propertyType === "attribute") {
+        await this.editAttributeValue(document, message.sourceLine, message.key, message.value);
+      } else if (message.propertyType === "config") {
+        await this.editAttributeValue(document, message.sourceLine, "value", message.value);
+      } else if (message.propertyType === "binding") {
+        await this.editAttributeValue(document, message.sourceLine, "alias", message.value);
+      }
+
+      webviewPanel.webview.postMessage({
+        type: "editNodePropertyResult",
+        success: true,
+        nodeId: message.nodeId,
+        propertyType: message.propertyType,
+        key: message.key,
+        value: message.value,
+      });
+    } catch (error) {
+      const messageText = (error as Error).message;
+      vscode.window.showErrorMessage(`Failed to apply edit: ${messageText}`);
+      webviewPanel.webview.postMessage({
+        type: "editNodePropertyResult",
+        success: false,
+        nodeId: message.nodeId,
+        propertyType: message.propertyType,
+        key: message.key,
+        error: messageText,
+      });
+      this.suppressNextDocumentChange.delete(docKey);
+    }
+  }
+
+  /**
+   * Replace an attribute value on the line where the element starts.
+   * Throws if the attribute cannot be located to avoid unintended structural edits.
+   */
+  private async editAttributeValue(
+    document: vscode.TextDocument,
+    sourceLine: number,
+    attributeName: string,
+    newValue: string
+  ): Promise<void> {
+    const startLine = Math.max(0, sourceLine - 1);
+    const tagRange = this.getStartTagRange(document, startLine);
+    const tagText = document.getText(tagRange);
+
+    const attrRegex = new RegExp(`${attributeName}\\s*=\\s*("([^"]*)"|'([^']*)')`);
+    const match = attrRegex.exec(tagText);
+
+    if (!match) {
+      throw new Error(`Attribute "${attributeName}" not found near line ${sourceLine}`);
+    }
+
+    const matchText = match[0];
+    const quotedPart = match[1];
+    const quoteOffset = matchText.indexOf(quotedPart);
+    const valueStartInTag = match.index + quoteOffset + 1; // skip opening quote
+    const currentValueLength = (match[2] ?? match[3] ?? "").length;
+    const valueStartPos = this.offsetToPosition(tagRange.start.line, tagText, valueStartInTag);
+    const valueEndPos = this.offsetToPosition(
+      tagRange.start.line,
+      tagText,
+      valueStartInTag + currentValueLength
+    );
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(document.uri, new vscode.Range(valueStartPos, valueEndPos), escapeXmlAttributeValue(newValue));
+
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) {
+      throw new Error("VS Code rejected the edit");
+    }
+  }
+
+  /**
+   * Expand from a start line to the end of the opening tag.
+   */
+  private getStartTagRange(document: vscode.TextDocument, startLine: number): vscode.Range {
+    const start = new vscode.Position(startLine, 0);
+    let endLine = startLine;
+    let endChar = document.lineAt(endLine).text.length;
+
+    while (endLine < document.lineCount) {
+      const lineText = document.lineAt(endLine).text;
+      const closingIndex = lineText.indexOf(">");
+      if (closingIndex !== -1) {
+        endChar = closingIndex + 1;
+        break;
+      }
+      endLine += 1;
+    }
+
+    return new vscode.Range(start, new vscode.Position(endLine, endChar));
+  }
+
+  /**
+   * Convert an offset within a multi-line string to a document position.
+   */
+  private offsetToPosition(startLine: number, text: string, offset: number): vscode.Position {
+    const lines = text.split("\n");
+    let remaining = offset;
+    let line = startLine;
+
+    for (const lineText of lines) {
+      if (remaining <= lineText.length) {
+        return new vscode.Position(line, remaining);
+      }
+      remaining -= lineText.length + 1; // include newline
+      line += 1;
+    }
+
+    return new vscode.Position(line, Math.max(0, remaining));
   }
 
   /**
@@ -339,4 +490,12 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function escapeXmlAttributeValue(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }

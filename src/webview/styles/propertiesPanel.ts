@@ -386,6 +386,35 @@ export function getPropertiesPanelStyles(): string {
       line-height: 1.4;
     }
 
+    .editable-input {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: rgba(10, 14, 26, 0.6);
+      color: var(--text);
+      font-size: 12px;
+      font-family: "SF Mono", "Fira Code", monospace;
+      transition: border 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+
+    .editable-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(109, 211, 255, 0.2);
+      background: rgba(10, 14, 26, 0.85);
+    }
+
+    .editable-input.pending {
+      opacity: 0.7;
+      cursor: progress;
+    }
+
+    .editable-input.error {
+      border-color: var(--danger);
+      box-shadow: 0 0 0 1px rgba(255, 138, 122, 0.3);
+    }
+
     .attribute-value.empty {
       color: var(--muted);
       font-style: italic;

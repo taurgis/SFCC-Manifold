@@ -143,6 +143,7 @@ function drawNode(layer: Konva.Layer, node: PlacedNode): void {
     fontFamily: "IBM Plex Sans, system-ui, sans-serif",
     fill: "#0b1021",
     padding: 0,
+    name: "node-type",
     perfectDrawEnabled: false,
   });
   const pillWidth = pillText.width() + 12;
@@ -176,6 +177,7 @@ function drawNode(layer: Konva.Layer, node: PlacedNode): void {
       fill: "#d8e2ff",
       ellipsis: true,
       wrap: "none",
+      name: "node-title",
       listening: false,
       perfectDrawEnabled: false,
     })
@@ -193,6 +195,7 @@ function drawNode(layer: Konva.Layer, node: PlacedNode): void {
       fill: "#93a4c8",
       ellipsis: true,
       wrap: "none",
+      name: "node-branch",
       listening: false,
       perfectDrawEnabled: false,
     })

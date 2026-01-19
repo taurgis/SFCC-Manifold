@@ -109,9 +109,9 @@ describe("parsePipeline", () => {
       expect(result.nodes[0].type).toBe("pipelet");
       expect(result.nodes[0].label).toBe("Script");
       expect(result.nodes[0].configProperties).toHaveLength(2);
-      expect(result.nodes[0].configProperties?.[0]).toEqual({ key: "ScriptFile", value: "test.ds" });
+      expect(result.nodes[0].configProperties?.[0]).toMatchObject({ key: "ScriptFile", value: "test.ds" });
       expect(result.nodes[0].bindings).toHaveLength(2);
-      expect(result.nodes[0].bindings?.[0]).toEqual({ key: "Input", alias: "MyInput" });
+      expect(result.nodes[0].bindings?.[0]).toMatchObject({ key: "Input", alias: "MyInput" });
     });
 
     it("should parse call-node", () => {

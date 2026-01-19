@@ -25,6 +25,7 @@ export type PipelineNodeType =
 export interface KeyBinding {
   key: string;
   alias: string;
+  sourceLocation?: SourceLocation;
 }
 
 /**
@@ -33,6 +34,7 @@ export interface KeyBinding {
 export interface ConfigProperty {
   key: string;
   value: string;
+  sourceLocation?: SourceLocation;
 }
 
 /**

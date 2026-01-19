@@ -552,7 +552,7 @@ function collectConfigProperties(el: Element): ConfigProperty[] {
         const key = child.getAttribute("key");
         const value = child.getAttribute("value");
         if (key !== null) {
-          properties.push({ key, value: value ?? "" });
+          properties.push({ key, value: value ?? "", sourceLocation: getSourceLocation(child) });
         }
       }
     }
@@ -575,7 +575,7 @@ function collectKeyBindings(el: Element): KeyBinding[] {
         const key = child.getAttribute("key");
         const alias = child.getAttribute("alias");
         if (key !== null) {
-          bindings.push({ key, alias: alias ?? "" });
+          bindings.push({ key, alias: alias ?? "", sourceLocation: getSourceLocation(child) });
         }
       }
     }

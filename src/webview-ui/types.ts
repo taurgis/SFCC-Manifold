@@ -80,12 +80,14 @@ export interface BendPoint {
 
 export interface ConfigProperty {
   key: string;
-  value: unknown;
+  value: string;
+  sourceLocation?: SourceLocation;
 }
 
 export interface Binding {
   key: string;
   alias: string | null;
+  sourceLocation?: SourceLocation;
 }
 
 export interface Template {

@@ -2,12 +2,26 @@
  * Properties panel rendering and management
  */
 
+import Konva from "konva";
 import { NODE_COLORS, getEdgeColor } from "./constants";
-import { pipelineData, placedNodes, setSelectedNodeId, setSelectedEdgeId } from "./state";
+import { nodeGroups, pipelineData, placedNodes, setSelectedNodeId, setSelectedEdgeId } from "./state";
 import { iconSvgs, getNodeTypeIcon } from "./icons";
 import { escapeHtml, escapeAttr, formatAttributeKey } from "./utils";
 import { getVsCodeApi } from "./navigation";
 import type { PlacedNode, PipelineNode, PipelineEdge, SourceLocation } from "./types";
+
+const NON_EDITABLE_ATTRIBUTE_KEYS = new Set([
+  "target-connector",
+  "source-connector",
+  "target-path",
+]);
+
+function isAttributeEditable(key: string, node: PlacedNode | PipelineNode): boolean {
+  if (!key) {return false;}
+  if (NON_EDITABLE_ATTRIBUTE_KEYS.has(key)) {return false;}
+  // Require a source line to safely rewrite the attribute in XML
+  return Boolean(node.sourceLocation?.line);
+}
 
 /**
  * Find a node by ID (local implementation to avoid circular deps)
@@ -83,6 +97,33 @@ export function initPropertiesPanel(): void {
     }
   });
 
+  // Editable fields commit on blur or Enter
+  content.addEventListener(
+    "blur",
+    (e) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.classList.contains("editable-input")) {
+        handleInputCommit(target as HTMLInputElement, false);
+      }
+    },
+    true
+  );
+
+  content.addEventListener("keydown", (e) => {
+    const target = e.target as HTMLElement | null;
+    if (e.key === "Enter" && target && target.classList.contains("editable-input")) {
+      e.preventDefault();
+      handleInputCommit(target as HTMLInputElement, true);
+    }
+  });
+
+  window.addEventListener("message", (event) => {
+    const message = event.data;
+    if (message?.type === "editNodePropertyResult") {
+      handleEditResult(message);
+    }
+  });
+
   // Initialize resize functionality
   initPanelResize();
 }
@@ -130,6 +171,178 @@ function initPanelResize(): void {
       document.body.classList.remove("resizing-panel");
     }
   });
+}
+
+interface EditResultMessage {
+  type: "editNodePropertyResult";
+  success: boolean;
+  nodeId: string;
+  propertyType: "attribute" | "config" | "binding";
+  key: string;
+  value?: string;
+  error?: string;
+}
+
+function handleInputCommit(input: HTMLInputElement, fromEnter: boolean): void {
+  const vscode = getVsCodeApi();
+  if (!vscode) {return;}
+  if (input.disabled) {return;}
+
+  const kind = input.getAttribute("data-kind");
+  const nodeId = input.getAttribute("data-node-id");
+  const key = input.getAttribute("data-key");
+  const lineAttr = input.getAttribute("data-line");
+  const originalValue = input.getAttribute("data-original-value") ?? "";
+  const nextValue = input.value;
+
+  if (!kind || !nodeId || !key || !lineAttr) {return;}
+
+  const sourceLine = parseInt(lineAttr, 10);
+  if (!Number.isFinite(sourceLine) || sourceLine <= 0) {return;}
+  if (!fromEnter && nextValue === originalValue) {return;}
+
+  setPendingState(input, true);
+
+  vscode.postMessage({
+    type: "editNodeProperty",
+    nodeId,
+    propertyType: kind,
+    key,
+    value: nextValue,
+    sourceLine,
+  });
+}
+
+function handleEditResult(message: EditResultMessage): void {
+  const keySelector = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(message.key) : message.key;
+  const nodeSelector = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(message.nodeId) : message.nodeId;
+  const selector = `.editable-input[data-node-id="${nodeSelector}"][data-kind="${message.propertyType}"][data-key="${keySelector}"]`;
+  const input = document.querySelector(selector) as HTMLInputElement | null;
+
+  if (!input) {
+    if (message.success) {
+      applyLocalPropertyUpdate(message);
+    }
+    return;
+  }
+
+  setPendingState(input, false);
+
+  if (!message.success) {
+    input.classList.add("error");
+    input.setAttribute("title", message.error || "Failed to save");
+    const original = input.getAttribute("data-original-value");
+    if (original !== null) {
+      input.value = original;
+    }
+    return;
+  }
+
+  input.classList.remove("error");
+  input.removeAttribute("title");
+  input.setAttribute("data-original-value", message.value ?? "");
+  if (typeof message.value === "string") {
+    input.value = message.value;
+  }
+
+  applyLocalPropertyUpdate(message);
+}
+
+function setPendingState(input: HTMLInputElement, pending: boolean): void {
+  if (pending) {
+    input.classList.add("pending");
+    input.disabled = true;
+  } else {
+    input.classList.remove("pending");
+    input.disabled = false;
+  }
+}
+
+function applyLocalPropertyUpdate(message: EditResultMessage): void {
+  const targets = [...pipelineData.nodes, ...placedNodes];
+
+  for (const node of targets) {
+    if (node.id !== message.nodeId) {
+      continue;
+    }
+
+    if (message.propertyType === "config" && node.configProperties) {
+      const prop = node.configProperties.find((p) => p.key === message.key);
+      if (prop && typeof message.value === "string") {
+        prop.value = message.value;
+      }
+    } else if (message.propertyType === "binding" && node.bindings) {
+      const binding = node.bindings.find((b) => b.key === message.key);
+      if (binding && typeof message.value === "string") {
+        binding.alias = message.value;
+      }
+    } else if (message.propertyType === "attribute") {
+      node.attributes[message.key] = message.value ?? "";
+      refreshNodeLabel(node);
+    }
+  }
+}
+
+function refreshNodeLabel(node: PlacedNode | PipelineNode): void {
+  const newLabel = deriveLabelFromAttributes(node);
+  if (!newLabel || newLabel === node.label) {
+    return;
+  }
+
+  node.label = newLabel;
+
+  // Update matching placed node copy so selection/state stay in sync
+  for (const placed of placedNodes) {
+    if (placed.id === node.id) {
+      placed.label = newLabel;
+    }
+  }
+
+  // Update the canvas text in-place to avoid full redraw
+  const group = nodeGroups[node.id];
+  const title = group?.findOne(".node-title") as Konva.Text | undefined;
+  if (title) {
+    title.text(newLabel);
+    title.getLayer()?.batchDraw();
+  } else {
+    // Fallback: best-effort layer redraw
+    window.pipelineLayer?.batchDraw();
+  }
+}
+
+function deriveLabelFromAttributes(node: PlacedNode | PipelineNode): string {
+  const attrs = node.attributes || {};
+  switch (node.type) {
+    case "start": {
+      const name = attrs.name || "";
+      return name ? `Start ${name}` : "Start";
+    }
+    case "end": {
+      const name = attrs.name || "";
+      return name ? `End ${name}` : "End";
+    }
+    case "pipelet": {
+      return attrs["pipelet-name"] || node.label || "Pipelet";
+    }
+    case "call": {
+      const target = attrs["start-name-ref"] || "";
+      return target ? `Call ${target}` : "Call";
+    }
+    case "jump": {
+      const target = attrs["start-name-ref"] || "";
+      return target ? `Jump ${target}` : "Jump";
+    }
+    case "decision": {
+      const condition = attrs["condition-key"] || "";
+      return condition ? `Decision ${condition}` : "Decision";
+    }
+    case "loop": {
+      const iter = attrs["iterator-key"] || "";
+      return iter ? `Loop ${iter}` : "Loop";
+    }
+    default:
+      return node.label;
+  }
 }
 
 /**
@@ -353,14 +566,16 @@ function renderConfigPropertiesSection(node: PlacedNode | PipelineNode): string 
     <div class="attributes-grid">`;
 
   for (const prop of configProps) {
-    const displayValue =
-      prop.value !== undefined && prop.value !== null && prop.value !== ""
-        ? escapeHtml(String(prop.value))
-        : '<span class="empty">empty</span>';
+    const value = prop.value ?? "";
+    const editable = prop.sourceLocation?.line;
 
     html += `<div class="attribute-item">
       <div class="attribute-key">${escapeHtml(prop.key)}</div>
-      <div class="attribute-value">${displayValue}</div>
+      <div class="attribute-value">${
+        editable
+          ? renderEditableInput("config", node.id, prop.key, value, prop.sourceLocation)
+          : renderReadOnlyValue(value)
+      }</div>
     </div>`;
   }
 
@@ -382,6 +597,7 @@ function renderBindingsSection(node: PlacedNode | PipelineNode): string {
     <div class="bindings-list">`;
 
   for (const binding of bindings) {
+    const aliasValue = binding.alias ?? "";
     html += `<div class="binding-item">
       <div class="binding-key">
         <span class="binding-key-label">Key</span>
@@ -390,9 +606,11 @@ function renderBindingsSection(node: PlacedNode | PipelineNode): string {
       <div class="binding-arrow">${iconSvgs.arrowRight}</div>
       <div class="binding-alias">
         <span class="binding-alias-label">Alias</span>
-        <span class="binding-alias-value${binding.alias ? "" : " empty"}">
-          ${binding.alias ? escapeHtml(binding.alias) : "empty"}
-        </span>
+        ${
+          binding.sourceLocation?.line
+            ? renderEditableInput("binding", node.id, binding.key, aliasValue, binding.sourceLocation)
+            : `<span class="binding-alias-value${aliasValue ? "" : " empty"}">${aliasValue ? escapeHtml(aliasValue) : "empty"}</span>`
+        }
       </div>
     </div>`;
   }
@@ -447,14 +665,15 @@ function renderAttributesSection(node: PlacedNode | PipelineNode): string {
 
   for (const key of keys) {
     const value = attrs[key];
-    const displayValue =
-      value !== undefined && value !== null && value !== ""
-        ? escapeHtml(String(value))
-        : '<span class="empty">empty</span>';
+    const editable = isAttributeEditable(key, node);
 
     html += `<div class="attribute-item">
       <div class="attribute-key">${escapeHtml(formatAttributeKey(key))}</div>
-      <div class="attribute-value">${displayValue}</div>
+      <div class="attribute-value">${
+        editable
+          ? renderEditableInput("attribute", node.id, key, value ?? "", node.sourceLocation)
+          : renderReadOnlyValue(value)
+      }</div>
     </div>`;
   }
 
@@ -543,4 +762,32 @@ function renderEdgeDetailsSection(edge: PipelineEdge): string {
       </div>
     </div>
   </div>`;
+}
+
+function renderEditableInput(
+  kind: "attribute" | "config" | "binding",
+  nodeId: string,
+  key: string,
+  value: string,
+  sourceLocation?: SourceLocation
+): string {
+  const cleanValue = value ?? "";
+  const line = sourceLocation?.line ? ` data-line="${sourceLocation.line}"` : "";
+  return `<input
+    class="editable-input"
+    type="text"
+    data-kind="${kind}"
+    data-node-id="${escapeAttr(nodeId)}"
+    data-key="${escapeAttr(key)}"
+    data-original-value="${escapeAttr(cleanValue)}"${line}
+    value="${escapeAttr(cleanValue)}"
+    spellcheck="false"
+  />`;
+}
+
+function renderReadOnlyValue(value: string | undefined | null): string {
+  if (value === undefined || value === null || value === "") {
+    return '<span class="empty">empty</span>';
+  }
+  return escapeHtml(String(value));
 }
